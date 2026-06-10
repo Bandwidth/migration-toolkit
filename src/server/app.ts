@@ -121,5 +121,36 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     return reply.code(204).send();
   });
 
+  app.post("/2010-04-01/Accounts/:accountSid/Calls.json", async (req, reply) => {
+    const header = req.headers.authorization ?? "";
+    const expected =
+      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+    if (header !== expected)
+      return reply.code(401).send({
+        code: 20003,
+        message: "Authentication Error - invalid username or password",
+        status: 401,
+      });
+    const body = req.body as Record<string, string>;
+    const { To, From, Url } = body;
+    if (!To || !From || !Url)
+      return reply
+        .code(400)
+        .send({ code: 21201, message: "To, From, and Url are required", status: 400 });
+    const answerUrl = `${config.publicBaseUrl}/bw/initiate?voiceUrl=${encodeURIComponent(Url)}`;
+    const { callId } = await deps.bwClient.createCall({ to: To, from: From, answerUrl });
+    const sid = toCallSid(callId);
+    store.put(callId, { sid, from: From, to: To, direction: "outbound-api", voiceUrl: Url });
+    return reply.code(201).send({
+      sid,
+      account_sid: config.accountSid,
+      to: To,
+      from: From,
+      status: "queued",
+      direction: "outbound-api",
+      api_version: "2010-04-01",
+    });
+  });
+
   return app;
 }
