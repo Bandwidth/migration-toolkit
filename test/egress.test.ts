@@ -29,9 +29,15 @@ describe("param builders", () => {
     });
   });
   it("gather adds Digits and in-progress status", () => {
-    const p = gatherParams(call, "AC123", "42");
+    const p = gatherParams(call, "AC123", { digits: "42" });
     expect(p.Digits).toBe("42");
     expect(p.CallStatus).toBe("in-progress");
+    expect(p.SpeechResult).toBeUndefined();
+  });
+  it("gather surfaces speech text as SpeechResult", () => {
+    const p = gatherParams(call, "AC123", { speech: "schedule a checkup" });
+    expect(p.SpeechResult).toBe("schedule a checkup");
+    expect(p.Digits).toBeUndefined();
   });
   it("status → completed with duration", () => {
     const p = statusParams(call, "AC123", 17);

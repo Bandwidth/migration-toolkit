@@ -16,9 +16,19 @@ describe("Gather", () => {
     expect(r.bxml).toContain(`<SpeakSentence>Press 1</SpeakSentence>`);
     expect(r.hasErrors).toBe(false);
   });
-  it("rejects speech input as error", () => {
-    const r = translateTwiml(`<Response><Gather input="speech" action="/a"/></Response>`);
-    expect(r.hasErrors).toBe(true);
+  it("maps speech input to BW input=speech (supported, not an error)", () => {
+    const r = translateTwiml(`<Response><Gather input="speech" action="/a"/></Response>`, {
+      rewriteUrl: rw,
+    });
+    expect(r.hasErrors).toBe(false);
+    expect(r.bxml).toContain(`input="speech"`);
+  });
+  it("maps 'dtmf speech' to BW input=dtmf_speech", () => {
+    const r = translateTwiml(`<Response><Gather input="dtmf speech" action="/a"/></Response>`, {
+      rewriteUrl: rw,
+    });
+    expect(r.bxml).toContain(`input="dtmf_speech"`);
+    expect(r.hasErrors).toBe(false);
   });
   it("warns when action is missing (Twilio re-requests current URL)", () => {
     const r = translateTwiml(`<Response><Gather numDigits="1"/></Response>`);

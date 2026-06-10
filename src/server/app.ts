@@ -27,6 +27,7 @@ interface BwEvent {
   to?: string;
   direction?: string;
   digits?: string;
+  text?: string; // BW gather event speech transcription
 }
 
 export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInstance {
@@ -104,8 +105,8 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
         voiceUrl: config.voiceUrl,
       } satisfies CallRecord);
     const params =
-      event.eventType === "gather" && event.digits !== undefined
-        ? gatherParams(record, config.accountSid, event.digits)
+      event.eventType === "gather" && (event.digits !== undefined || event.text !== undefined)
+        ? gatherParams(record, config.accountSid, { digits: event.digits, speech: event.text })
         : { ...initiateParams(record, config.accountSid), CallStatus: "in-progress" };
     return fetchAndTranslate(query.next, params, reply);
   });

@@ -113,17 +113,26 @@ function translateGather(
   findings: Finding[],
   rewrite: (u: string, k: UrlKind) => string,
 ): XmlEl[] | null {
-  if (node.attrs.input && node.attrs.input !== "dtmf")
-    return unsupported(
-      node,
-      findings,
-      `Gather input="${node.attrs.input}" is not supported in P0 (DTMF only).`,
-    );
   const attrs: Record<string, string | undefined> = {
     maxDigits: node.attrs.numDigits,
     firstDigitTimeout: node.attrs.timeout,
     terminatingDigits: node.attrs.finishOnKey,
   };
+  // Twilio input: "dtmf" | "speech" | "dtmf speech". BW: dtmf | speech | dtmf_speech.
+  if (node.attrs.input) {
+    const tokens = node.attrs.input.trim().split(/\s+/);
+    const hasSpeech = tokens.includes("speech");
+    const hasDtmf = tokens.includes("dtmf");
+    if (hasSpeech) {
+      attrs.input = hasDtmf ? "dtmf_speech" : "speech";
+      if (node.attrs.speechModel || node.attrs.hints || node.attrs.language)
+        warn(
+          "Gather",
+          "Speech recognition is supported, but Twilio speech tuning (speechModel/hints/language) has no direct BXML equivalent; BW uses its own recognizer.",
+          findings,
+        );
+    }
+  }
   if (node.attrs.action) attrs.gatherUrl = rewrite(node.attrs.action, "action");
   else
     warn(

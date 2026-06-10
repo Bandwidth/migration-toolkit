@@ -51,9 +51,13 @@ export function initiateParams(call: CallRecord, accountSid: string): Record<str
 export function gatherParams(
   call: CallRecord,
   accountSid: string,
-  digits: string,
+  result: { digits?: string; speech?: string },
 ): Record<string, string> {
-  return { ...baseParams(call, accountSid), CallStatus: "in-progress", Digits: digits };
+  const p: Record<string, string> = { ...baseParams(call, accountSid), CallStatus: "in-progress" };
+  // Twilio sends Digits for DTMF and SpeechResult for speech recognition.
+  if (result.digits !== undefined) p.Digits = result.digits;
+  if (result.speech !== undefined) p.SpeechResult = result.speech;
+  return p;
 }
 
 export function statusParams(

@@ -5,7 +5,7 @@
     "Say": {
       "bxml": "SpeakSentence",
       "status": "supported",
-      "notes": "Voice names and SSML dialects differ; adapter passes voice through with a warning.",
+      "notes": "Plain text and the voice attribute map cleanly (voice passed through with a warning). KNOWN GAP: SSML markup inside Say is not yet preserved — inline SSML is escaped to literal text and child SSML elements are dropped. Both BW SpeakSentence and Twilio Say support SSML, so this is an adapter parser/serializer gap, not a platform limit.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/speakSentence",
       "attributes": {
         "voice": { "bxml": "voice", "status": "partial", "notes": "No 1:1 voice-name mapping." },
@@ -25,14 +25,14 @@
     "Gather": {
       "bxml": "Gather",
       "status": "supported",
-      "notes": "DTMF only in P0; speech input is not yet translated.",
-      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/gather",
+      "notes": "DTMF and speech both supported. Per dev.bandwidth.com, BW Gather input accepts dtmf/speech/dtmf_speech.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/programmable-voice/bxml/gather",
       "attributes": {
         "action": { "bxml": "gatherUrl", "status": "supported" },
         "numDigits": { "bxml": "maxDigits", "status": "supported" },
         "timeout": { "bxml": "firstDigitTimeout", "status": "supported" },
         "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
-        "input": { "bxml": null, "status": "partial", "notes": "Only input=\"dtmf\" supported in P0; speech is unsupported." }
+        "input": { "bxml": "input", "status": "supported", "notes": "Twilio dtmf / speech / 'dtmf speech' map to BW input dtmf / speech / dtmf_speech. Speech results arrive as the BW gather event's text field, surfaced to the customer app as Twilio's SpeechResult param." }
       }
     },
     "Pause": {
