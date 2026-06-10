@@ -32,6 +32,14 @@ describe("POST /2010-04-01/Accounts/:sid/Calls.json", () => {
     expect(body.sid).toMatch(/^CA[0-9a-f]{32}$/);
     expect(body.status).toBe("queued");
     expect(body.direction).toBe("outbound-api");
+    // Shape parity with the live fixture (test/fixtures/twilio/call-resource.json):
+    expect(body.duration).toBeNull();
+    expect(body.price).toBeNull();
+    expect(body.date_created).toMatch(/\+0000$/);
+    expect(body.uri).toBe(`/2010-04-01/Accounts/AC123/Calls/${body.sid}.json`);
+    expect(body.subresource_uris.recordings).toBe(
+      `/2010-04-01/Accounts/AC123/Calls/${body.sid}/Recordings.json`,
+    );
     const callArgs = bwClient.createCall.mock.calls[0][0];
     expect(callArgs.to).toBe("+15552223333");
     expect(callArgs.answerUrl).toBe(
@@ -39,7 +47,7 @@ describe("POST /2010-04-01/Accounts/:sid/Calls.json", () => {
     );
   });
 
-  it("rejects bad credentials with Twilio-shaped 401", async () => {
+  it("rejects bad credentials with the exact live 401 body", async () => {
     const { app } = makeApp();
     const res = await app.inject({
       method: "POST",
@@ -48,18 +56,36 @@ describe("POST /2010-04-01/Accounts/:sid/Calls.json", () => {
       payload: { To: "+1", From: "+2", Url: "https://x.test" },
     });
     expect(res.statusCode).toBe(401);
-    expect(res.json().code).toBe(20003);
+    expect(res.json()).toEqual({
+      code: 20003,
+      message: "Authenticate",
+      more_info: "https://www.twilio.com/docs/errors/20003",
+      status: 401,
+    });
   });
 
-  it("rejects missing params with Twilio-shaped 400", async () => {
+  it("validates To, then Url, then From — matching live Twilio order and bodies", async () => {
     const { app } = makeApp();
-    const res = await app.inject({
-      method: "POST",
-      url: "/2010-04-01/Accounts/AC123/Calls.json",
-      headers: { authorization: auth },
-      payload: { To: "+1" },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().code).toBe(21201);
+    const post = (payload: Record<string, string>) =>
+      app.inject({
+        method: "POST",
+        url: "/2010-04-01/Accounts/AC123/Calls.json",
+        headers: { authorization: auth },
+        payload,
+      });
+
+    const noTo = await post({});
+    expect(noTo.statusCode).toBe(400);
+    expect(noTo.json().code).toBe(21201);
+    expect(noTo.json().message).toBe("No 'To' number is specified");
+
+    const noUrl = await post({ To: "+1" });
+    expect(noUrl.statusCode).toBe(400);
+    expect(noUrl.json().code).toBe(21205);
+    expect(noUrl.json().message).toBe("Url parameter is required.");
+
+    const noFrom = await post({ To: "+1", Url: "https://x.test" });
+    expect(noFrom.statusCode).toBe(400);
+    expect(noFrom.json().code).toBe(21213);
   });
 });

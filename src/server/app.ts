@@ -4,6 +4,7 @@ import { translateTwiml, type UrlKind } from "../translator/translate.js";
 import { bxmlDocument } from "../xml/build-xml.js";
 import { initiateParams, gatherParams, statusParams, postToCustomer } from "../twilio/egress.js";
 import { toCallSid } from "../twilio/call-sid.js";
+import { createdCallResource, twilioErrors } from "../twilio/call-resource.js";
 import { CallStore, type CallRecord } from "./call-store.js";
 import type { BwClient } from "../bw/client.js";
 
@@ -125,31 +126,20 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     const header = req.headers.authorization ?? "";
     const expected =
       "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
-    if (header !== expected)
-      return reply.code(401).send({
-        code: 20003,
-        message: "Authentication Error - invalid username or password",
-        status: 401,
-      });
+    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
     const body = req.body as Record<string, string>;
     const { To, From, Url } = body;
-    if (!To || !From || !Url)
-      return reply
-        .code(400)
-        .send({ code: 21201, message: "To, From, and Url are required", status: 400 });
+    // Validation order matches live Twilio: To, then Url, then From.
+    if (!To) return reply.code(400).send(twilioErrors.missingTo400);
+    if (!Url) return reply.code(400).send(twilioErrors.missingUrl400);
+    if (!From) return reply.code(400).send(twilioErrors.missingFrom400);
     const answerUrl = `${config.publicBaseUrl}/bw/initiate?voiceUrl=${encodeURIComponent(Url)}`;
     const { callId } = await deps.bwClient.createCall({ to: To, from: From, answerUrl });
     const sid = toCallSid(callId);
     store.put(callId, { sid, from: From, to: To, direction: "outbound-api", voiceUrl: Url });
-    return reply.code(201).send({
-      sid,
-      account_sid: config.accountSid,
-      to: To,
-      from: From,
-      status: "queued",
-      direction: "outbound-api",
-      api_version: "2010-04-01",
-    });
+    return reply
+      .code(201)
+      .send(createdCallResource({ sid, accountSid: config.accountSid, to: To, from: From }));
   });
 
   return app;
