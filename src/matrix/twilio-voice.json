@@ -1,0 +1,169 @@
+{
+  "provider": "twilio",
+  "target": "bandwidth",
+  "verbs": {
+    "Say": {
+      "bxml": "SpeakSentence",
+      "status": "supported",
+      "notes": "Voice names and SSML dialects differ; adapter passes voice through with a warning.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/speakSentence",
+      "attributes": {
+        "voice": { "bxml": "voice", "status": "partial", "notes": "No 1:1 voice-name mapping." },
+        "language": { "bxml": "locale", "status": "partial", "notes": "Locale formats differ." },
+        "loop": { "bxml": null, "status": "partial", "notes": "Emitted once; BXML has no loop attribute." }
+      }
+    },
+    "Play": {
+      "bxml": "PlayAudio",
+      "status": "supported",
+      "notes": "",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/playAudio",
+      "attributes": {
+        "loop": { "bxml": null, "status": "partial", "notes": "Emitted once; BXML has no loop attribute." }
+      }
+    },
+    "Gather": {
+      "bxml": "Gather",
+      "status": "supported",
+      "notes": "DTMF only in P0; speech input is not yet translated.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/gather",
+      "attributes": {
+        "action": { "bxml": "gatherUrl", "status": "supported" },
+        "numDigits": { "bxml": "maxDigits", "status": "supported" },
+        "timeout": { "bxml": "firstDigitTimeout", "status": "supported" },
+        "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
+        "input": { "bxml": null, "status": "partial", "notes": "Only input=\"dtmf\" supported in P0; speech is unsupported." }
+      }
+    },
+    "Pause": {
+      "bxml": "Pause",
+      "status": "supported",
+      "notes": "",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/pause",
+      "attributes": {
+        "length": { "bxml": "duration", "status": "supported" }
+      }
+    },
+    "Hangup": {
+      "bxml": "Hangup",
+      "status": "supported",
+      "notes": "",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/hangup",
+      "attributes": {}
+    },
+    "Redirect": {
+      "bxml": "Redirect",
+      "status": "supported",
+      "notes": "URL moves from element text to redirectUrl attribute.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/redirect",
+      "attributes": {}
+    },
+    "Reject": {
+      "bxml": "Hangup",
+      "status": "partial",
+      "notes": "Mapped to Hangup; Bandwidth answers before hanging up, so the caller may be billed for a short call.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/hangup",
+      "attributes": {}
+    },
+    "Record": {
+      "bxml": "Record",
+      "status": "supported",
+      "notes": "Recording callback payloads differ; adapter normalizes.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/record",
+      "attributes": {
+        "action": { "bxml": "recordCompleteUrl", "status": "supported" },
+        "maxLength": { "bxml": "maxDuration", "status": "supported" },
+        "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
+        "transcribe": { "bxml": "transcribe", "status": "partial", "notes": "Engine and callback shape differ." },
+        "playBeep": { "bxml": null, "status": "partial", "notes": "No direct equivalent; adapter can prepend a beep PlayAudio later." }
+      }
+    },
+    "Dial": {
+      "bxml": "Transfer",
+      "status": "partial",
+      "notes": "Number/Sip nouns map to Transfer; Conference noun maps to Conference; Queue and Client nouns are unsupported. Deep Dial semantics (answerOnBridge, child-call status propagation) are not replicated in P0.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/transfer",
+      "attributes": {
+        "callerId": { "bxml": "transferCallerId", "status": "supported" },
+        "timeout": { "bxml": "callTimeout", "status": "supported" },
+        "action": { "bxml": "transferCompleteUrl", "status": "supported" }
+      }
+    },
+    "Enqueue": {
+      "bxml": null,
+      "status": "unsupported",
+      "notes": "Bandwidth has no queue primitive (P0 gap per PRD). Contact-center queue flows cannot migrate yet.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/",
+      "attributes": {}
+    },
+    "Leave": {
+      "bxml": null,
+      "status": "unsupported",
+      "notes": "No queue primitive.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/",
+      "attributes": {}
+    },
+    "Pay": {
+      "bxml": null,
+      "status": "unsupported",
+      "notes": "PCI payment capture is out of scope (deferred per PRD).",
+      "attributes": {}
+    },
+    "Refer": {
+      "bxml": null,
+      "status": "unsupported",
+      "notes": "SIP REFER not translated in P0.",
+      "attributes": {}
+    },
+    "Connect": {
+      "bxml": "StartStream",
+      "status": "partial",
+      "notes": "Stream noun maps to StartStream via the Media Streams bridge; ConversationRelay and VirtualAgent are unsupported (separate IoV).",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/startStream",
+      "attributes": {}
+    },
+    "Stream": {
+      "bxml": "StartStream",
+      "status": "partial",
+      "notes": "Twilio WS message schema is emulated by the adapter's stream bridge; live Bandwidth-side binding requires fixture capture.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/startStream",
+      "attributes": {}
+    },
+    "Conference": {
+      "bxml": "Conference",
+      "status": "partial",
+      "notes": "Basic named conferences work. waitUrl hold music is NOT supported by Bandwidth; beep cues are partial.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/conference",
+      "attributes": {
+        "waitUrl": { "bxml": null, "status": "unsupported", "notes": "No conference hold-music equivalent (P1 gap per PRD)." },
+        "beep": { "bxml": null, "status": "partial", "notes": "No direct beep attribute." }
+      }
+    },
+    "Number": {
+      "bxml": "PhoneNumber",
+      "status": "supported",
+      "notes": "",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/transfer",
+      "attributes": {}
+    },
+    "Sip": {
+      "bxml": "SipUri",
+      "status": "supported",
+      "notes": "",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/transfer",
+      "attributes": {}
+    },
+    "Queue": {
+      "bxml": null,
+      "status": "unsupported",
+      "notes": "No queue primitive.",
+      "attributes": {}
+    },
+    "Client": {
+      "bxml": null,
+      "status": "unsupported",
+      "notes": "Twilio Client (WebRTC) endpoints have no adapter mapping in P0.",
+      "attributes": {}
+    }
+  }
+}
