@@ -1,7 +1,14 @@
+/** A pre-formatted, already-escaped inner string emitted verbatim (e.g. SSML). */
+export interface RawXml {
+  raw: string;
+}
+
+export type XmlChild = XmlEl | string | RawXml;
+
 export interface XmlEl {
   name: string;
   attrs?: Record<string, string | undefined>;
-  children?: (XmlEl | string)[];
+  children?: XmlChild[];
 }
 
 const esc = (s: string) =>
@@ -13,7 +20,7 @@ export function serialize(el: XmlEl): string {
     .map(([k, v]) => ` ${k}="${esc(String(v))}"`)
     .join("");
   const kids = (el.children ?? [])
-    .map((c) => (typeof c === "string" ? esc(c) : serialize(c)))
+    .map((c) => (typeof c === "string" ? esc(c) : "raw" in c ? c.raw : serialize(c)))
     .join("");
   return kids ? `<${el.name}${attrs}>${kids}</${el.name}>` : `<${el.name}${attrs}/>`;
 }

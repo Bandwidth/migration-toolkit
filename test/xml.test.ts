@@ -16,6 +16,16 @@ describe("parseTwiml", () => {
   it("throws on missing Response root", () => {
     expect(() => parseTwiml("<Nope/>")).toThrow(/Response/);
   });
+
+  it("preserves inner SSML markup as raw, escaping only real text", () => {
+    const node = parseTwiml(
+      `<Response><Say>You owe <say-as interpret-as="currency">$5</say-as> &amp; tax by <emphasis>Friday</emphasis>.</Say></Response>`,
+    );
+    const say = node.children[0];
+    expect(say.inner).toBe(
+      `You owe <say-as interpret-as="currency">$5</say-as> &amp; tax by <emphasis>Friday</emphasis>.`,
+    );
+  });
 });
 
 describe("serialize", () => {
@@ -28,6 +38,14 @@ describe("serialize", () => {
   it("wraps a BXML document", () => {
     expect(bxmlDocument([{ name: "Hangup" }])).toBe(
       `<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`,
+    );
+  });
+  it("emits raw children verbatim (no escaping), strings escaped", () => {
+    expect(
+      serialize({ name: "SpeakSentence", children: [{ raw: `a <emphasis>b</emphasis>` }] }),
+    ).toBe(`<SpeakSentence>a <emphasis>b</emphasis></SpeakSentence>`);
+    expect(serialize({ name: "SpeakSentence", children: ["a <b>"] })).toBe(
+      `<SpeakSentence>a &lt;b&gt;</SpeakSentence>`,
     );
   });
 });

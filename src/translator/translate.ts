@@ -24,6 +24,27 @@ export interface TranslateResult {
 
 const matrix: CompatMatrix = loadMatrix();
 
+// BW SpeakSentence accepts a fixed set of voice names (default "susan").
+// A Twilio voice name passed through verbatim (e.g. "alice") is invalid for BW
+// and can make BW reject the verb and fail the call — so map the common ones
+// and DROP anything unrecognized (BW then uses its default voice).
+const BW_VOICES = new Set([
+  "susan", "julie", "kate", "bridget", "dave", "paul", "jorge", "samuel", "emily",
+]);
+const TWILIO_TO_BW_VOICE: Record<string, string> = {
+  alice: "julie",
+  woman: "susan",
+  man: "dave",
+};
+
+/** Returns a valid BW voice, or null if the Twilio voice has no safe equivalent. */
+function mapVoice(twilioVoice: string): string | null {
+  const v = twilioVoice.toLowerCase();
+  if (TWILIO_TO_BW_VOICE[v]) return TWILIO_TO_BW_VOICE[v];
+  if (BW_VOICES.has(v)) return v;
+  return null; // e.g. Polly.* — unknown to BW; drop rather than break the call
+}
+
 export function translateTwiml(twiml: string, opts: TranslateOptions = {}): TranslateResult {
   const root = parseTwiml(twiml);
   const findings: Finding[] = [];
@@ -64,16 +85,23 @@ function translateVerb(
     case "Say": {
       const attrs: Record<string, string | undefined> = {};
       if (node.attrs.voice) {
-        attrs.voice = node.attrs.voice;
-        warn(
-          "Say",
-          `Twilio voice "${node.attrs.voice}" has no exact Bandwidth equivalent; verify the rendered voice.`,
-          findings,
-        );
+        const bw = mapVoice(node.attrs.voice);
+        if (bw) {
+          attrs.voice = bw;
+          if (bw !== node.attrs.voice.toLowerCase())
+            warn("Say", `Twilio voice "${node.attrs.voice}" mapped to Bandwidth voice "${bw}".`, findings);
+        } else {
+          warn(
+            "Say",
+            `Twilio voice "${node.attrs.voice}" has no Bandwidth equivalent; using BW's default voice (susan) to avoid a call failure.`,
+            findings,
+          );
+        }
       }
       if (node.attrs.loop && node.attrs.loop !== "1")
         warn("Say", "loop attribute is not supported by BXML; content will play once.", findings);
-      return [{ name: "SpeakSentence", attrs, children: [node.text] }];
+      // Use inner (SSML preserved as raw markup) rather than flattened text.
+      return [{ name: "SpeakSentence", attrs, children: [{ raw: node.inner }] }];
     }
     case "Play": {
       if (node.attrs.loop && node.attrs.loop !== "1")
