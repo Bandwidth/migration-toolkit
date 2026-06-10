@@ -30,7 +30,8 @@ interface BwEvent {
 }
 
 export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInstance {
-  const app = Fastify({ logger: false });
+  // Logging off by default; set ADAPTER_LOG=1 to enable request/error logs.
+  const app = Fastify({ logger: process.env.ADAPTER_LOG === "1" });
   app.register(formbody);
   const store = new CallStore();
 
