@@ -164,12 +164,65 @@ function translateDial(
   findings: Finding[],
   rewrite: (u: string, k: UrlKind) => string,
 ): XmlEl[] | null {
-  return unsupported(node, findings);
+  const conference = node.children.find((c) => c.name === "Conference");
+  if (conference) {
+    for (const [attr, mapping] of Object.entries(matrix.verbs.Conference.attributes)) {
+      if (conference.attrs[attr] !== undefined && mapping.status === "unsupported")
+        findings.push({
+          severity: "error",
+          verb: "Conference",
+          message: `Conference ${attr}: ${mapping.notes}`,
+          docsUrl: matrix.verbs.Conference.docsUrl,
+        });
+      else if (conference.attrs[attr] !== undefined && mapping.status === "partial")
+        warn("Conference", `Conference ${attr}: ${mapping.notes}`, findings);
+    }
+    return [{ name: "Conference", children: [conference.text] }];
+  }
+  const blocked = node.children.find((c) => c.name === "Queue" || c.name === "Client");
+  if (blocked) return unsupported(blocked, findings);
+
+  const targets: XmlEl[] = [];
+  for (const child of node.children) {
+    if (child.name === "Number") targets.push({ name: "PhoneNumber", children: [child.text] });
+    else if (child.name === "Sip") targets.push({ name: "SipUri", children: [child.text] });
+    else
+      return unsupported(child, findings, `Dial noun <${child.name}> is not supported by the adapter.`);
+  }
+  if (targets.length === 0 && node.text) targets.push({ name: "PhoneNumber", children: [node.text] });
+  if (targets.length === 0) return unsupported(node, findings, "Dial with no target.");
+
+  warn(
+    "Dial",
+    "Deep Dial semantics (answerOnBridge, child-call status propagation) are not replicated in P0; validate call-progress behavior.",
+    findings,
+  );
+  const attrs: Record<string, string | undefined> = {
+    transferCallerId: node.attrs.callerId,
+    callTimeout: node.attrs.timeout,
+  };
+  if (node.attrs.action) attrs.transferCompleteUrl = rewrite(node.attrs.action, "transfer");
+  return [{ name: "Transfer", attrs, children: targets }];
 }
+
 function translateConnect(
   node: TwimlNode,
   findings: Finding[],
   rewrite: (u: string, k: UrlKind) => string,
 ): XmlEl[] | null {
-  return unsupported(node, findings);
+  const stream = node.children.find((c) => c.name === "Stream");
+  if (!stream)
+    return unsupported(
+      node,
+      findings,
+      `Connect noun <${node.children[0]?.name ?? "?"}> is not supported (ConversationRelay/VirtualAgent are out of adapter scope).`,
+    );
+  if (!stream.attrs.url) return unsupported(stream, findings, "Stream requires a url attribute.");
+  warn("Stream", matrix.verbs.Stream.notes, findings);
+  return [
+    {
+      name: "StartStream",
+      attrs: { destination: rewrite(stream.attrs.url, "stream"), tracks: "inbound" },
+    },
+  ];
 }

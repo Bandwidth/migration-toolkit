@@ -12,6 +12,9 @@ const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "",
   trimValues: true,
+  // Phone numbers like "+15552223333" must stay strings — never coerce to number.
+  parseTagValue: false,
+  parseAttributeValue: false,
 });
 
 export function parseTwiml(xml: string): TwimlNode {
