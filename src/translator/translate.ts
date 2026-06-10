@@ -108,21 +108,56 @@ function translateVerb(
   }
 }
 
-// Gather / Record / Dial / Connect are implemented in later tasks. Until then,
-// they report unsupported so the module compiles and fails loudly:
 function translateGather(
   node: TwimlNode,
   findings: Finding[],
   rewrite: (u: string, k: UrlKind) => string,
 ): XmlEl[] | null {
-  return unsupported(node, findings);
+  if (node.attrs.input && node.attrs.input !== "dtmf")
+    return unsupported(
+      node,
+      findings,
+      `Gather input="${node.attrs.input}" is not supported in P0 (DTMF only).`,
+    );
+  const attrs: Record<string, string | undefined> = {
+    maxDigits: node.attrs.numDigits,
+    firstDigitTimeout: node.attrs.timeout,
+    terminatingDigits: node.attrs.finishOnKey,
+  };
+  if (node.attrs.action) attrs.gatherUrl = rewrite(node.attrs.action, "action");
+  else
+    warn(
+      "Gather",
+      "Gather without an action attribute re-requests the current document URL on Twilio; set an explicit action for identical behavior through the adapter.",
+      findings,
+    );
+  const children: XmlEl[] = [];
+  for (const child of node.children) {
+    const el = translateVerb(child, findings, rewrite);
+    if (el) children.push(...el);
+  }
+  return [{ name: "Gather", attrs, children }];
 }
+
 function translateRecord(
   node: TwimlNode,
   findings: Finding[],
   rewrite: (u: string, k: UrlKind) => string,
 ): XmlEl[] | null {
-  return unsupported(node, findings);
+  const attrs: Record<string, string | undefined> = {
+    maxDuration: node.attrs.maxLength,
+    terminatingDigits: node.attrs.finishOnKey,
+  };
+  if (node.attrs.action) attrs.recordCompleteUrl = rewrite(node.attrs.action, "record");
+  if (node.attrs.transcribe === "true")
+    warn(
+      "Record",
+      "Transcription engines and callback payloads differ between Twilio and Bandwidth.",
+      findings,
+    );
+  if (node.attrs.playBeep && node.attrs.playBeep !== "false")
+    warn("Record", "playBeep has no BXML equivalent; no beep will play before recording.", findings);
+  return [{ name: "Record", attrs }];
 }
 function translateDial(
   node: TwimlNode,
