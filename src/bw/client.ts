@@ -11,9 +11,23 @@ export interface ModifyCallOpts {
   redirectMethod?: "GET" | "POST";
 }
 
+export interface GetCallResult {
+  callId: string;
+  to: string;
+  from: string;
+  direction: string;
+  /** BW call state, e.g. "active" | "disconnected". */
+  state: string;
+  enqueuedTime?: string;
+  startTime?: string;
+  answerTime?: string;
+  endTime?: string;
+}
+
 export interface BwClient {
   createCall(opts: CreateCallOpts): Promise<{ callId: string }>;
   modifyCall(callId: string, opts: ModifyCallOpts): Promise<void>;
+  getCall(callId: string): Promise<GetCallResult>;
 }
 
 export function createBwClient(cfg: {
@@ -45,6 +59,16 @@ export function createBwClient(cfg: {
       });
       if (!res.ok)
         throw new Error(`Bandwidth modifyCall failed: ${res.status} ${await res.text()}`);
+    },
+    async getCall(callId) {
+      const res = await fetch(`${base}/accounts/${cfg.accountId}/calls/${callId}`, {
+        headers: { Accept: "application/json", Authorization: auth },
+      });
+      if (!res.ok)
+        throw new Error(`Bandwidth getCall failed: ${res.status} ${await res.text()}`);
+      const json = (await res.json()) as GetCallResult | GetCallResult[];
+      // BW has returned both a bare object and a single-element array for this endpoint.
+      return Array.isArray(json) ? json[0] : json;
     },
   };
 }

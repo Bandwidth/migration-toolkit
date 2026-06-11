@@ -8,6 +8,22 @@ export function twilioDate(d: Date): string {
   return d.toUTCString().replace(/GMT$/, "+0000");
 }
 
+/**
+ * Map a Bandwidth call state to the nearest Twilio call status.
+ * BW's call-state enum is not fully enumerated in public docs; "active" and
+ * "disconnected" are documented. Unknown states fall back to "in-progress".
+ */
+export function bwStateToTwilioStatus(state: string): string {
+  switch (state) {
+    case "active":
+      return "in-progress";
+    case "disconnected":
+      return "completed";
+    default:
+      return "in-progress";
+  }
+}
+
 export function createdCallResource(opts: {
   sid: string;
   accountSid: string;
@@ -15,6 +31,9 @@ export function createdCallResource(opts: {
   from: string;
   direction?: string;
   status?: string;
+  startTime?: string;
+  endTime?: string;
+  duration?: string;
   now?: Date;
 }): Record<string, unknown> {
   const { sid, accountSid, to, from } = opts;
@@ -29,8 +48,8 @@ export function createdCallResource(opts: {
     date_created: date,
     date_updated: date,
     direction: opts.direction ?? "outbound-api",
-    duration: null,
-    end_time: null,
+    duration: opts.duration ?? null,
+    end_time: opts.endTime ? twilioDate(new Date(opts.endTime)) : null,
     forwarded_from: null,
     from,
     from_formatted: from,
@@ -41,7 +60,7 @@ export function createdCallResource(opts: {
     price_unit: "USD",
     queue_time: "0",
     sid,
-    start_time: null,
+    start_time: opts.startTime ? twilioDate(new Date(opts.startTime)) : null,
     status: opts.status ?? "queued",
     subresource_uris: {
       events: `${base}/Events.json`,

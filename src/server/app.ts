@@ -4,7 +4,7 @@ import { translateTwiml, type UrlKind } from "../translator/translate.js";
 import { bxmlDocument } from "../xml/build-xml.js";
 import { initiateParams, gatherParams, statusParams, postToCustomer } from "../twilio/egress.js";
 import { toCallSid } from "../twilio/call-sid.js";
-import { createdCallResource, twilioErrors } from "../twilio/call-resource.js";
+import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
 import { CallStore, type CallRecord } from "./call-store.js";
 import type { BwClient } from "../bw/client.js";
 
@@ -151,6 +151,36 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     return reply
       .code(201)
       .send(createdCallResource({ sid, accountSid: config.accountSid, to: To, from: From }));
+  });
+
+  app.get("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", async (req, reply) => {
+    const header = req.headers.authorization ?? "";
+    const expected =
+      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    const { callSid } = req.params as { callSid: string };
+    const record = store.getBySid(callSid);
+    if (!record) return reply.code(404).send(twilioErrors.notFound(config.accountSid, callSid));
+    const bw = await deps.bwClient.getCall(record.bwCallId);
+    // Twilio bills from answer to end; fall back to start if the call was never answered.
+    const started = bw.answerTime ?? bw.startTime;
+    const duration =
+      started && bw.endTime
+        ? String(Math.round((Date.parse(bw.endTime) - Date.parse(started)) / 1000))
+        : undefined;
+    return reply.send(
+      createdCallResource({
+        sid: record.sid,
+        accountSid: config.accountSid,
+        to: record.to,
+        from: record.from,
+        direction: record.direction,
+        status: bwStateToTwilioStatus(bw.state),
+        startTime: bw.startTime,
+        endTime: bw.endTime,
+        duration,
+      }),
+    );
   });
 
   app.post("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", async (req, reply) => {
