@@ -5,7 +5,7 @@
     "Say": {
       "bxml": "SpeakSentence",
       "status": "supported",
-      "notes": "Plain text and the voice attribute map cleanly. Common Twilio voice aliases (alice, man, woman) and Amazon Polly voice names (e.g. Polly.Joanna, Polly.Matthew) are mapped to the nearest BW voice; truly unrecognized voices are dropped rather than passed through, to avoid BW rejecting the call. KNOWN GAP: SSML markup inside Say is not yet preserved — inline SSML is escaped to literal text and child SSML elements are dropped. Both BW SpeakSentence and Twilio Say support SSML, so this is an adapter parser/serializer gap, not a platform limit.",
+      "notes": "Plain text and the voice attribute map cleanly. Common Twilio voice aliases (alice, man, woman) and Amazon Polly voice names (e.g. Polly.Joanna, Polly.Matthew) are mapped to the nearest BW voice; truly unrecognized voices are dropped rather than passed through, to avoid BW rejecting the call. SSML markup inside Say is preserved: child elements (say-as, emphasis, break, prosody, sub, lang, etc.) pass through to SpeakSentence as raw markup while genuine text is XML-escaped. The tag set is structurally accepted by BW SpeakSentence (validated via `band bxml raw`); BW's TTS renders the standard SSML tags, and any tag it does not act on is ignored rather than failing the call.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/speakSentence",
       "attributes": {
         "voice": { "bxml": "voice", "status": "partial", "notes": "Common Twilio/Polly voice names are mapped to the nearest BW equivalent; see TWILIO_TO_BW_VOICE in translate.ts. BW supports 50+ named voices across multiple locales — the full allowlist is in BW_VOICES." },
