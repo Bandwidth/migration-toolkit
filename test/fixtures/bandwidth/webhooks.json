@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "captured": "2026-06-10",
+    "source": "live Bandwidth voice webhook (app callInitiatedCallbackUrl) via cloudflared tunnel on a real provisioned number",
+    "note": "Content-Type application/json (NOT form-encoded). No signature header \u2014 BW voice webhooks are not HMAC-signed like Twilio's. Confirms adapter /bw/initiate field names: eventType, callId, from, to, direction.",
+    "redacted": [
+      "accountId",
+      "applicationId",
+      "callId",
+      "from",
+      "to",
+      "callUrl"
+    ]
+  },
+  "initiateEvent": {
+    "eventType": "initiate",
+    "callId": "c-xxxxxxxx-xxxxxxxx",
+    "from": "+15550000000",
+    "to": "+15550000000",
+    "privacy": false,
+    "direction": "inbound",
+    "applicationId": "<app-uuid>",
+    "accountId": "99XXXXX",
+    "startTime": "2026-06-10T19:15:19.622Z",
+    "eventTime": "2026-06-10T19:15:19.694Z",
+    "callUrl": "https://voice.bandwidth.com/api/v2/accounts/99XXXXX/calls/c-xxxxxxxx-xxxxxxxx",
+    "callerDisplayName": ""
+  }
+}
