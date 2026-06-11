@@ -15,6 +15,7 @@ describe("POST /2010-04-01/Accounts/:sid/Calls.json", () => {
       createCall: vi.fn(async (_opts: CreateCallOpts) => ({ callId: "c-out-1" })),
       modifyCall: vi.fn(),
       getCall: vi.fn(),
+      listRecordings: vi.fn(),
     };
     const app = buildApp(config, { fetchImpl: fetch, bwClient });
     return { app, bwClient };

@@ -26,10 +26,27 @@ export interface GetCallResult {
   endTime?: string;
 }
 
+export interface BwRecording {
+  recordingId: string;
+  callId: string;
+  to: string;
+  from: string;
+  direction: string;
+  channels: number;
+  /** ISO-8601 duration, e.g. "PT13.67S". */
+  duration: string;
+  startTime?: string;
+  endTime?: string;
+  fileFormat?: string;
+  /** BW recording status: processing | partial | complete | deleted | error. */
+  status: string;
+}
+
 export interface BwClient {
   createCall(opts: CreateCallOpts): Promise<{ callId: string }>;
   modifyCall(callId: string, opts: ModifyCallOpts): Promise<void>;
   getCall(callId: string): Promise<GetCallResult>;
+  listRecordings(callId: string): Promise<BwRecording[]>;
 }
 
 const HOSTS = {
@@ -88,6 +105,15 @@ export function createBwClient(cfg: {
       const json = (await res.json()) as GetCallResult | GetCallResult[];
       // BW has returned both a bare object and a single-element array for this endpoint.
       return Array.isArray(json) ? json[0] : json;
+    },
+    async listRecordings(callId) {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${callId}/recordings`, {
+        headers: { Accept: "application/json", Authorization: await authHeader() },
+      });
+      if (!res.ok)
+        throw new Error(`Bandwidth listRecordings failed: ${res.status} ${await res.text()}`);
+      const json = (await res.json()) as BwRecording[] | null;
+      return json ?? [];
     },
   };
 }

@@ -15,7 +15,7 @@ function appWithTwiml(twimlByUrl: Record<string, string>) {
     if (!twiml) return new Response("not found", { status: 404 });
     return new Response(twiml, { status: 200 });
   }) as unknown as typeof fetch;
-  const bwClient = { createCall: vi.fn(), modifyCall: vi.fn(), getCall: vi.fn() };
+  const bwClient = { createCall: vi.fn(), modifyCall: vi.fn(), getCall: vi.fn(), listRecordings: vi.fn() };
   return { app: buildApp(config, { fetchImpl, bwClient }), fetchImpl };
 }
 

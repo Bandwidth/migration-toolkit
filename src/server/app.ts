@@ -5,6 +5,7 @@ import { bxmlDocument } from "../xml/build-xml.js";
 import { initiateParams, gatherParams, statusParams, postToCustomer } from "../twilio/egress.js";
 import { toCallSid } from "../twilio/call-sid.js";
 import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
+import { recordingList } from "../twilio/recording-resource.js";
 import { CallStore, type CallRecord } from "./call-store.js";
 import type { BwClient } from "../bw/client.js";
 
@@ -152,6 +153,21 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
       .code(201)
       .send(createdCallResource({ sid, accountSid: config.accountSid, to: To, from: From }));
   });
+
+  app.get(
+    "/2010-04-01/Accounts/:accountSid/Calls/:callSid/Recordings.json",
+    async (req, reply) => {
+      const header = req.headers.authorization ?? "";
+      const expected =
+        "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+      if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+      const { callSid } = req.params as { callSid: string };
+      const record = store.getBySid(callSid);
+      if (!record) return reply.code(404).send(twilioErrors.notFound(config.accountSid, callSid));
+      const recs = await deps.bwClient.listRecordings(record.bwCallId);
+      return reply.send(recordingList(recs, config.accountSid, record.sid));
+    },
+  );
 
   app.get("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", async (req, reply) => {
     const header = req.headers.authorization ?? "";
