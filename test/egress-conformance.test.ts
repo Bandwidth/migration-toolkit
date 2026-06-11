@@ -19,6 +19,7 @@ const fixture = JSON.parse(
 
 const call = {
   sid: "CAdeadbeef",
+  bwCallId: "c-deadbeef",
   from: "+15550001111",
   to: "+15552223333",
   direction: "inbound" as const,

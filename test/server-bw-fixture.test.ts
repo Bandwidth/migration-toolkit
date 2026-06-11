@@ -24,7 +24,7 @@ describe("inbound path against the real captured BW initiate payload", () => {
         publicBaseUrl: "https://adapter.test",
         voiceUrl: "https://customer.test/voice",
       },
-      { fetchImpl, bwClient: { createCall: vi.fn() } },
+      { fetchImpl, bwClient: { createCall: vi.fn(), modifyCall: vi.fn() } },
     );
 
     const res = await app.inject({

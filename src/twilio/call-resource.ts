@@ -13,6 +13,8 @@ export function createdCallResource(opts: {
   accountSid: string;
   to: string;
   from: string;
+  direction?: string;
+  status?: string;
   now?: Date;
 }): Record<string, unknown> {
   const { sid, accountSid, to, from } = opts;
@@ -26,7 +28,7 @@ export function createdCallResource(opts: {
     caller_name: null,
     date_created: date,
     date_updated: date,
-    direction: "outbound-api",
+    direction: opts.direction ?? "outbound-api",
     duration: null,
     end_time: null,
     forwarded_from: null,
@@ -40,7 +42,7 @@ export function createdCallResource(opts: {
     queue_time: "0",
     sid,
     start_time: null,
-    status: "queued",
+    status: opts.status ?? "queued",
     subresource_uris: {
       events: `${base}/Events.json`,
       notifications: `${base}/Notifications.json`,
@@ -85,5 +87,14 @@ export const twilioErrors = {
     message: "From phone number is required.",
     more_info: "https://www.twilio.com/docs/errors/21213",
     status: 400,
+  },
+  /** 404 for an unknown call; message embeds the request path, matching live Twilio. */
+  notFound(accountSid: string, callSid: string) {
+    return {
+      code: 20404,
+      message: `The requested resource /2010-04-01/Accounts/${accountSid}/Calls/${callSid}.json was not found`,
+      more_info: "https://www.twilio.com/docs/errors/20404",
+      status: 404,
+    };
   },
 } as const;

@@ -4,8 +4,16 @@ export interface CreateCallOpts {
   answerUrl: string;
 }
 
+export interface ModifyCallOpts {
+  /** "active" redirects the call to redirectUrl; "completed" hangs it up. */
+  state: "active" | "completed";
+  redirectUrl?: string;
+  redirectMethod?: "GET" | "POST";
+}
+
 export interface BwClient {
   createCall(opts: CreateCallOpts): Promise<{ callId: string }>;
+  modifyCall(callId: string, opts: ModifyCallOpts): Promise<void>;
 }
 
 export function createBwClient(cfg: {
@@ -28,6 +36,15 @@ export function createBwClient(cfg: {
         throw new Error(`Bandwidth createCall failed: ${res.status} ${await res.text()}`);
       const json = (await res.json()) as { callId: string };
       return { callId: json.callId };
+    },
+    async modifyCall(callId, opts) {
+      const res = await fetch(`${base}/accounts/${cfg.accountId}/calls/${callId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: auth },
+        body: JSON.stringify(opts),
+      });
+      if (!res.ok)
+        throw new Error(`Bandwidth modifyCall failed: ${res.status} ${await res.text()}`);
     },
   };
 }

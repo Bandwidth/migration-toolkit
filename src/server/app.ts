@@ -82,6 +82,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     const voiceUrl = query.voiceUrl ?? existing?.voiceUrl ?? config.voiceUrl;
     const record: CallRecord = existing ?? {
       sid: toCallSid(event.callId),
+      bwCallId: event.callId,
       from: event.from ?? "",
       to: event.to ?? "",
       direction: "inbound",
@@ -99,6 +100,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
       store.get(event.callId) ??
       ({
         sid: toCallSid(event.callId),
+        bwCallId: event.callId,
         from: event.from ?? "",
         to: event.to ?? "",
         direction: "inbound",
@@ -138,10 +140,52 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     const answerUrl = `${config.publicBaseUrl}/bw/initiate?voiceUrl=${encodeURIComponent(Url)}`;
     const { callId } = await deps.bwClient.createCall({ to: To, from: From, answerUrl });
     const sid = toCallSid(callId);
-    store.put(callId, { sid, from: From, to: To, direction: "outbound-api", voiceUrl: Url });
+    store.put(callId, {
+      sid,
+      bwCallId: callId,
+      from: From,
+      to: To,
+      direction: "outbound-api",
+      voiceUrl: Url,
+    });
     return reply
       .code(201)
       .send(createdCallResource({ sid, accountSid: config.accountSid, to: To, from: From }));
+  });
+
+  app.post("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", async (req, reply) => {
+    const header = req.headers.authorization ?? "";
+    const expected =
+      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    const { callSid } = req.params as { callSid: string };
+    const record = store.getBySid(callSid);
+    if (!record) return reply.code(404).send(twilioErrors.notFound(config.accountSid, callSid));
+    const body = req.body as Record<string, string>;
+    const resource = (status: string) =>
+      createdCallResource({
+        sid: record.sid,
+        accountSid: config.accountSid,
+        to: record.to,
+        from: record.from,
+        direction: record.direction,
+        status,
+      });
+    // Twilio precedence: Status=completed hangs up; otherwise Url redirects.
+    if (body.Status === "completed") {
+      await deps.bwClient.modifyCall(record.bwCallId, { state: "completed" });
+      return reply.send(resource("completed"));
+    }
+    if (body.Url) {
+      const redirectUrl = `${config.publicBaseUrl}/bw/initiate?voiceUrl=${encodeURIComponent(body.Url)}`;
+      await deps.bwClient.modifyCall(record.bwCallId, {
+        state: "active",
+        redirectUrl,
+        redirectMethod: "POST",
+      });
+      return reply.send(resource("in-progress"));
+    }
+    return reply.code(400).send(twilioErrors.missingUrl400);
   });
 
   return app;
