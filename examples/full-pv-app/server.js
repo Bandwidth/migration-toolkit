@@ -27,18 +27,16 @@ const xml = (res, vr) => res.type("text/xml").send(vr.toString());
 app.post("/voice", (req, res) => {
   const vr = new twiml.VoiceResponse();
   const g = vr.gather({
-    input: "dtmf speech",
+    input: "dtmf",
     numDigits: 1,
     timeout: 6,
-    finishOnKey: "#",
     action: "/route",
     method: "POST",
   });
   g.say({ voice: "alice" }, "Welcome to the full voice demo.");
-  g.play("https://demo.example/audio/options.mp3");
   g.say(
-    'Say what you need, or press <break time="300ms"/> 1 to hear our voices, ' +
-      "2 to leave a message, 3 to reach an agent, or 4 to join a conference.",
+    "Press 1 to hear our voices, 2 to leave a message, " +
+      "3 to reach an agent, or 4 to join a conference.",
   );
   vr.redirect("/voice");
   xml(res, vr);
@@ -63,12 +61,16 @@ app.post("/route", (req, res) => {
 app.post("/voices", (req, res) => {
   const vr = new twiml.VoiceResponse();
   vr.say({ voice: "bridget" }, "This is Bridget speaking.");
-  vr.say(
-    { voice: "julie" },
-    'And this is Julie, with emphasis on <emphasis level="strong">trust</emphasis> and a pause.',
-  );
+  // Real SSML via the Twilio SDK builders (produces actual child elements,
+  // which the adapter now preserves through to BXML SpeakSentence).
+  const s = vr.say({ voice: "julie" });
+  s.addText("And this is Julie, with ");
+  s.emphasis({ level: "strong" }, "real S S M L emphasis");
+  s.addText(". Your callback line is ");
+  s.sayAs({ "interpret-as": "telephone" }, "9195550123");
+  s.addText(".");
   vr.pause({ length: 1 });
-  vr.say('<say-as interpret-as="telephone">9195550123</say-as> is our callback line.');
+  vr.say("Returning you to the menu.");
   vr.redirect("/voice");
   xml(res, vr);
 });

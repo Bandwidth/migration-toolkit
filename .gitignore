@@ -4,3 +4,5 @@ dist/
 
 # Raw webhook captures (unsanitized: real account SID, signatures, tokens) — never commit
 capture/
+
+.DS_Store
