@@ -9,3 +9,6 @@ capture/
 
 # Agent worktrees / local Claude state
 .claude/
+
+# Local planning artifacts (superpowers)
+docs/superpowers/
