@@ -12,7 +12,12 @@ class FakeBwSource extends EventEmitter implements BwStreamSource {
   close(): void {}
 }
 
-function collectBot(port: number): Promise<{ messages: any[]; socket: Promise<WebSocket> }> {
+// Distinct from streams-wire.test.ts (8200+) to avoid EADDRINUSE under parallel runs.
+const PORT = 8190;
+
+function collectBot(
+  port: number,
+): Promise<{ messages: any[]; socket: Promise<WebSocket>; close: () => void }> {
   return new Promise((resolve) => {
     const messages: any[] = [];
     const wss = new WebSocketServer({ port });
@@ -22,16 +27,16 @@ function collectBot(port: number): Promise<{ messages: any[]; socket: Promise<We
         res(ws);
       });
     });
-    wss.on("listening", () => resolve({ messages, socket }));
+    wss.on("listening", () => resolve({ messages, socket, close: () => wss.close() }));
   });
 }
 
 describe("TwilioStreamBridge", () => {
   it("performs connected/start handshake and forwards media both ways", async () => {
-    const { messages, socket } = await collectBot(8089);
+    const { messages, socket, close } = await collectBot(PORT);
     const source = new FakeBwSource();
     const bridge = new TwilioStreamBridge({
-      botUrl: "ws://127.0.0.1:8089",
+      botUrl: `ws://127.0.0.1:${PORT}`,
       callSid: "CAabc",
       accountSid: "AC123",
       source,
@@ -57,5 +62,6 @@ describe("TwilioStreamBridge", () => {
     expect(source.sent).toEqual(["BBBB"]);
 
     bridge.close();
+    close();
   });
 });

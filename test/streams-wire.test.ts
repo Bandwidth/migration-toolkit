@@ -236,12 +236,10 @@ describe("media framing", () => {
 // ─── dtmf ───────────────────────────────────────────────────────────────────
 
 describe("dtmf", () => {
-  it("emits 'dtmf' on BwStreamSource when the bridge receives dtmf from the bot", async () => {
+  it("forwards a dtmf digit from the BW source TO the bot (network → bot)", async () => {
     const port = nextPort();
-    const { socket, close } = await botServer(port);
+    const { messages, close } = await botServer(port);
     const source = new FakeBwSource();
-    const dtmfReceived: Array<{ track: string; digit: string }> = [];
-    source.on("dtmf", (d: { track: string; digit: string }) => dtmfReceived.push(d));
 
     const bridge = new TwilioStreamBridge({
       botUrl: `ws://127.0.0.1:${port}`,
@@ -250,22 +248,18 @@ describe("dtmf", () => {
       source,
     });
     await bridge.ready();
-    const bot = await socket;
 
-    bot.send(
-      JSON.stringify({
-        event: "dtmf",
-        streamSid: bridge.streamSid,
-        sequenceNumber: "5",
-        dtmf: { track: "inbound_track", digit: "7" },
-      })
-    );
+    // Caller pressed a digit: the BW network side emits "dtmf".
+    source.emit("dtmf", { track: "inbound_track", digit: "7" });
 
-    await waitFor(() => dtmfReceived.length >= 1);
+    await waitFor(() => messages.some((m: any) => m.event === "dtmf"));
     bridge.close();
     close();
 
-    expect(dtmfReceived[0]).toEqual({ track: "inbound_track", digit: "7" });
+    const dtmfMsg = messages.find((m: any) => m.event === "dtmf") as any;
+    expect(dtmfMsg.streamSid).toBe(bridge.streamSid);
+    expect(dtmfMsg.dtmf).toEqual({ track: "inbound_track", digit: "7" });
+    expect(dtmfMsg.sequenceNumber).toBeDefined();
   });
 });
 

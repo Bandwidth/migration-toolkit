@@ -77,6 +77,18 @@ export class TwilioStreamBridge {
       });
     });
 
+    // BW network → bot: caller pressed a digit. Per Twilio's Media Streams
+    // protocol, "dtmf" flows toward the bot (same direction as media/stop),
+    // NOT from the bot. The BW source emits "dtmf" with { track, digit }.
+    opts.source.on("dtmf", (payload: { track?: string; digit: string }) => {
+      this.send({
+        event: "dtmf",
+        sequenceNumber: String(++this.seq),
+        streamSid: this.streamSid,
+        dtmf: { track: payload.track ?? "inbound_track", digit: payload.digit },
+      });
+    });
+
     // BW network → bot: stream ended
     opts.source.on("stop", () => {
       this.send({
@@ -91,9 +103,16 @@ export class TwilioStreamBridge {
       this.ws.close();
     });
 
-    // Bot → bridge inbound message handler
+    // Bot → bridge inbound message handler. The bot only ever sends
+    // media / mark / clear back to us (per Twilio's protocol).
     this.ws.on("message", (data) => {
-      const msg = JSON.parse(String(data)) as Record<string, unknown>;
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(String(data)) as Record<string, unknown>;
+      } catch {
+        // Malformed frame from the bot — ignore rather than crash the process.
+        return;
+      }
 
       switch ((msg as any).event) {
         case "media":
@@ -112,13 +131,6 @@ export class TwilioStreamBridge {
         case "clear":
           // Flush buffered audio on the BW source's playout queue
           this.opts.source.flush();
-          break;
-
-        case "dtmf":
-          // Relay DTMF digit to BW side for call control
-          if (msg.dtmf) {
-            this.opts.source.emit("dtmf", msg.dtmf);
-          }
           break;
       }
     });
