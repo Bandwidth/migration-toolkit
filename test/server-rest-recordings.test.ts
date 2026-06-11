@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { Readable } from "node:stream";
 import { buildApp } from "../src/server/app.js";
 import type { CreateCallOpts, BwRecording } from "../src/bw/client.js";
 
@@ -30,6 +31,15 @@ function makeApp(recordings: BwRecording[]) {
     modifyCall: vi.fn(),
     getCall: vi.fn(),
     listRecordings: vi.fn(async (_callId: string) => recordings),
+    getRecording: vi.fn(async (callId: string, recordingId: string) => ({
+      ...bwRecording,
+      callId,
+      recordingId,
+    })),
+    getRecordingMedia: vi.fn(async (_callId: string, _recordingId: string) => ({
+      body: Readable.from([Buffer.from("RIFFfakewavbytes")]),
+      contentType: "audio/vnd.wave",
+    })),
   };
   const app = buildApp(config, { fetchImpl: fetch, bwClient });
   return { app, bwClient };
@@ -87,6 +97,62 @@ describe("GET /2010-04-01/Accounts/:sid/Calls/:callSid/Recordings.json", () => {
     const res = await app.inject({
       method: "GET",
       url: "/2010-04-01/Accounts/AC123/Calls/CA00000000000000000000000000000000/Recordings.json",
+      headers: { authorization: auth },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe(20404);
+  });
+});
+
+describe("GET /2010-04-01/Accounts/:sid/Recordings/:recordingSid", () => {
+  // List first so the adapter learns recordingSid -> (callId, recordingId).
+  async function listThenRecordingSid(app: ReturnType<typeof makeApp>["app"]) {
+    const callSid = await createCall(app);
+    const list = await app.inject({
+      method: "GET",
+      url: `/2010-04-01/Accounts/AC123/Calls/${callSid}/Recordings.json`,
+      headers: { authorization: auth },
+    });
+    return list.json().recordings[0].sid as string;
+  }
+
+  it("fetches a single recording's metadata as a Twilio recording resource", async () => {
+    const { app, bwClient } = makeApp([bwRecording]);
+    const recordingSid = await listThenRecordingSid(app);
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/2010-04-01/Accounts/AC123/Recordings/${recordingSid}.json`,
+      headers: { authorization: auth },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(bwClient.getRecording).toHaveBeenCalledWith("c-out-1", "r-1");
+    expect(res.json().sid).toBe(recordingSid);
+    expect(res.json().status).toBe("completed");
+  });
+
+  it("streams the recording media bytes with the upstream content-type", async () => {
+    const { app, bwClient } = makeApp([bwRecording]);
+    const recordingSid = await listThenRecordingSid(app);
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/2010-04-01/Accounts/AC123/Recordings/${recordingSid}.wav`,
+      headers: { authorization: auth },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(bwClient.getRecordingMedia).toHaveBeenCalledWith("c-out-1", "r-1");
+    expect(res.headers["content-type"]).toContain("audio/vnd.wave");
+    expect(res.rawPayload.toString()).toBe("RIFFfakewavbytes");
+  });
+
+  it("returns the live 404 body for an unknown recording", async () => {
+    const { app } = makeApp([]);
+    const res = await app.inject({
+      method: "GET",
+      url: "/2010-04-01/Accounts/AC123/Recordings/RE00000000000000000000000000000000.json",
       headers: { authorization: auth },
     });
     expect(res.statusCode).toBe(404);

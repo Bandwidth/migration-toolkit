@@ -16,6 +16,8 @@ describe("POST /2010-04-01/Accounts/:sid/Calls.json", () => {
       modifyCall: vi.fn(),
       getCall: vi.fn(),
       listRecordings: vi.fn(),
+    getRecording: vi.fn(),
+    getRecordingMedia: vi.fn(),
     };
     const app = buildApp(config, { fetchImpl: fetch, bwClient });
     return { app, bwClient };

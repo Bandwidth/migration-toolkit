@@ -1,11 +1,11 @@
-import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import formbody from "@fastify/formbody";
 import { translateTwiml, type UrlKind } from "../translator/translate.js";
 import { bxmlDocument } from "../xml/build-xml.js";
 import { initiateParams, gatherParams, statusParams, postToCustomer } from "../twilio/egress.js";
-import { toCallSid } from "../twilio/call-sid.js";
+import { toCallSid, toRecordingSid } from "../twilio/call-sid.js";
 import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
-import { recordingList } from "../twilio/recording-resource.js";
+import { recordingList, recordingResource } from "../twilio/recording-resource.js";
 import { CallStore, type CallRecord } from "./call-store.js";
 import type { BwClient } from "../bw/client.js";
 
@@ -165,9 +165,43 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
       const record = store.getBySid(callSid);
       if (!record) return reply.code(404).send(twilioErrors.notFound(config.accountSid, callSid));
       const recs = await deps.bwClient.listRecordings(record.bwCallId);
+      // Remember each recording's BW ids so it can later be fetched by its RE sid.
+      for (const rec of recs)
+        store.putRecording(toRecordingSid(rec.recordingId), {
+          bwCallId: rec.callId,
+          bwRecordingId: rec.recordingId,
+        });
       return reply.send(recordingList(recs, config.accountSid, record.sid));
     },
   );
+
+  app.get("/2010-04-01/Accounts/:accountSid/Recordings/:recordingSid.json", async (req, reply) => {
+    const header = req.headers.authorization ?? "";
+    const expected =
+      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    const { recordingSid } = req.params as { recordingSid: string };
+    const ref = store.getRecording(recordingSid);
+    if (!ref) return reply.code(404).send(twilioErrors.notFound(config.accountSid, recordingSid));
+    const rec = await deps.bwClient.getRecording(ref.bwCallId, ref.bwRecordingId);
+    return reply.send(recordingResource(rec, config.accountSid));
+  });
+
+  // Twilio serves recording audio at .../Recordings/RE....{mp3,wav}; both map to
+  // the same BW media stream (BW returns the format the recording is stored in).
+  const mediaHandler = async (req: FastifyRequest, reply: FastifyReply) => {
+    const header = req.headers.authorization ?? "";
+    const expected =
+      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    const { recordingSid } = req.params as { recordingSid: string };
+    const ref = store.getRecording(recordingSid);
+    if (!ref) return reply.code(404).send(twilioErrors.notFound(config.accountSid, recordingSid));
+    const media = await deps.bwClient.getRecordingMedia(ref.bwCallId, ref.bwRecordingId);
+    return reply.type(media.contentType).send(media.body);
+  };
+  app.get("/2010-04-01/Accounts/:accountSid/Recordings/:recordingSid.mp3", mediaHandler);
+  app.get("/2010-04-01/Accounts/:accountSid/Recordings/:recordingSid.wav", mediaHandler);
 
   app.get("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", async (req, reply) => {
     const header = req.headers.authorization ?? "";

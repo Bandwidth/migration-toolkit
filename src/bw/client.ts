@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { TokenManager } from "./token.js";
 
 export interface CreateCallOpts {
@@ -42,11 +43,19 @@ export interface BwRecording {
   status: string;
 }
 
+/** A recording's media as a stream plus its upstream content type. */
+export interface BwMedia {
+  body: Readable;
+  contentType: string;
+}
+
 export interface BwClient {
   createCall(opts: CreateCallOpts): Promise<{ callId: string }>;
   modifyCall(callId: string, opts: ModifyCallOpts): Promise<void>;
   getCall(callId: string): Promise<GetCallResult>;
   listRecordings(callId: string): Promise<BwRecording[]>;
+  getRecording(callId: string, recordingId: string): Promise<BwRecording>;
+  getRecordingMedia(callId: string, recordingId: string): Promise<BwMedia>;
 }
 
 const HOSTS = {
@@ -114,6 +123,29 @@ export function createBwClient(cfg: {
         throw new Error(`Bandwidth listRecordings failed: ${res.status} ${await res.text()}`);
       const json = (await res.json()) as BwRecording[] | null;
       return json ?? [];
+    },
+    async getRecording(callId, recordingId) {
+      const res = await fetchImpl(
+        `${base}/accounts/${cfg.accountId}/calls/${callId}/recordings/${recordingId}`,
+        { headers: { Accept: "application/json", Authorization: await authHeader() } },
+      );
+      if (!res.ok)
+        throw new Error(`Bandwidth getRecording failed: ${res.status} ${await res.text()}`);
+      const json = (await res.json()) as BwRecording | BwRecording[];
+      return Array.isArray(json) ? json[0] : json;
+    },
+    async getRecordingMedia(callId, recordingId) {
+      const res = await fetchImpl(
+        `${base}/accounts/${cfg.accountId}/calls/${callId}/recordings/${recordingId}/media`,
+        { headers: { Authorization: await authHeader() } },
+      );
+      if (!res.ok || !res.body)
+        throw new Error(`Bandwidth getRecordingMedia failed: ${res.status} ${await res.text()}`);
+      // Pipe the upstream body straight through — no full-file buffering.
+      return {
+        body: Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
+        contentType: res.headers.get("content-type") ?? "application/octet-stream",
+      };
     },
   };
 }

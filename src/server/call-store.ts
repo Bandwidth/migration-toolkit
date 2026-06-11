@@ -8,9 +8,16 @@ export interface CallRecord {
   voiceUrl: string;
 }
 
+/** Resolves a Twilio recording SID back to the BW call + recording it maps to. */
+export interface RecordingRef {
+  bwCallId: string;
+  bwRecordingId: string;
+}
+
 export class CallStore {
   private byBwId = new Map<string, CallRecord>();
   private bySid = new Map<string, CallRecord>();
+  private recordingsBySid = new Map<string, RecordingRef>();
   put(bwCallId: string, record: CallRecord): void {
     this.byBwId.set(bwCallId, record);
     this.bySid.set(record.sid, record);
@@ -20,5 +27,11 @@ export class CallStore {
   }
   getBySid(sid: string): CallRecord | undefined {
     return this.bySid.get(sid);
+  }
+  putRecording(recordingSid: string, ref: RecordingRef): void {
+    this.recordingsBySid.set(recordingSid, ref);
+  }
+  getRecording(recordingSid: string): RecordingRef | undefined {
+    return this.recordingsBySid.get(recordingSid);
   }
 }

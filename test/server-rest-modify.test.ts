@@ -16,6 +16,8 @@ function makeApp() {
     modifyCall: vi.fn(async (_callId: string, _opts: ModifyCallOpts) => {}),
     getCall: vi.fn(),
     listRecordings: vi.fn(),
+    getRecording: vi.fn(),
+    getRecordingMedia: vi.fn(),
   };
   const app = buildApp(config, { fetchImpl: fetch, bwClient });
   return { app, bwClient };
