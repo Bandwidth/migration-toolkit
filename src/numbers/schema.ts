@@ -262,24 +262,34 @@ export const BwOrderRequestSchema = z.object({
 
   /** Order specific known numbers. Mutually exclusive with areaCodeSearchAndOrderType. */
   existingTelephoneNumberOrderType: ExistingTelephoneNumberOrderTypeSchema.optional(),
-});
+}).refine(
+  (v) => !(v.areaCodeSearchAndOrderType && v.existingTelephoneNumberOrderType),
+  { message: "areaCodeSearchAndOrderType and existingTelephoneNumberOrderType are mutually exclusive" },
+);
 
 export type BwOrderRequest = z.infer<typeof BwOrderRequestSchema>;
 
 // ── Bandwidth: Order response ────────────────────────────────────────────────
 
-export const BwOrderResponseSchema = z.object({
-  /** Bandwidth-assigned order UUID. */
-  id: z.string(),
+// UNVERIFIED SHAPE: the exact v2 JSON order-response envelope (flat vs. nested
+// under `order`, field casing) is not confirmed against a live order — this
+// credential lacks the Numbers role to place one. Kept lenient (.passthrough,
+// optional fields) so a real response is never rejected or has fields silently
+// dropped; tighten once validated against a live v2 JSON order.
+export const BwOrderResponseSchema = z
+  .object({
+    /** Bandwidth-assigned order UUID. */
+    id: z.string().optional(),
 
-  /** Current status of the order. */
-  orderStatus: z.enum(["RECEIVED", "PROCESSING", "COMPLETE", "FAILED", "PARTIAL"]),
+    /** Current status of the order. */
+    orderStatus: z.enum(["RECEIVED", "PROCESSING", "COMPLETE", "FAILED", "PARTIAL"]),
 
-  /** ISO-8601 timestamp of order creation. */
-  orderCreateDate: z.string().optional(),
+    /** ISO-8601 timestamp of order creation. */
+    orderCreateDate: z.string().optional(),
 
-  /** Numbers provisioned once the order reaches COMPLETE state. */
-  telephoneNumbers: z.array(z.string()).optional(),
-});
+    /** Numbers provisioned once the order reaches COMPLETE state. */
+    telephoneNumbers: z.array(z.string()).optional(),
+  })
+  .passthrough();
 
 export type BwOrderResponse = z.infer<typeof BwOrderResponseSchema>;

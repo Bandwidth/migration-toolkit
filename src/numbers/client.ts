@@ -146,7 +146,12 @@ export interface NumbersClientConfig {
  *   https://dev.bandwidth.com/apis/numbers-apis/number-acquisition
  */
 export function createNumbersClient(cfg: NumbersClientConfig): NumbersClient {
-  const base = cfg.baseUrl ?? "https://numbers.bandwidth.com";
+  // Bandwidth's Numbers API lives under api.bandwidth.com (not numbers.bandwidth.com).
+  const base = cfg.baseUrl ?? "https://api.bandwidth.com/api/v2";
+  // NOTE (auth, unresolved — same open question as the voice side's createBwClient):
+  // the v2 JSON endpoints expect OAuth2 Bearer tokens; only the legacy IRIS/XML
+  // endpoints use Basic auth. This Basic wiring is a placeholder until the platform
+  // OAuth2 reconciliation lands. Not production-ready.
   const auth =
     "Basic " + Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
 

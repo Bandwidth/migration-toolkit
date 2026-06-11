@@ -150,6 +150,20 @@ describe("translatePurchaseToOrder: Twilio purchase → BW order", () => {
     expect(result.gaps.some((g) => /friendlyName/i.test(g.twilioParam))).toBe(true);
   });
 
+  it("emits a separate gap for EACH set field, not just the first (app SIDs)", () => {
+    const result = translatePurchaseToOrder(
+      {
+        phoneNumber: "+14155550001",
+        voiceApplicationSid: "APvoice",
+        smsApplicationSid: "APsms",
+      },
+      { siteId: "1111", orderName: "Order" },
+    );
+    const params = result.gaps.map((g) => g.twilioParam);
+    expect(params).toContain("voiceApplicationSid");
+    expect(params).toContain("smsApplicationSid");
+  });
+
   it("surfaces voiceUrl as a gap", () => {
     const result = translatePurchaseToOrder(
       { phoneNumber: "+14155550001", voiceUrl: "https://app.example.com/voice" },

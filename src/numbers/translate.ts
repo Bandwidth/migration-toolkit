@@ -332,13 +332,15 @@ export function translatePurchaseToOrder(
       reason: "Status callback HTTP method must be configured post-acquisition.",
     });
   }
-  if (twilio.voiceApplicationSid !== undefined || twilio.smsApplicationSid !== undefined) {
-    gaps.push({
-      twilioParam: twilio.voiceApplicationSid !== undefined ? "voiceApplicationSid" : "smsApplicationSid",
-      reason:
-        "Twilio Application SIDs have no equivalent in Bandwidth. " +
-        "Configure webhooks directly on the Bandwidth application post-acquisition.",
-    });
+  for (const param of ["voiceApplicationSid", "smsApplicationSid"] as const) {
+    if (twilio[param] !== undefined) {
+      gaps.push({
+        twilioParam: param,
+        reason:
+          "Twilio Application SIDs have no equivalent in Bandwidth. " +
+          "Configure webhooks directly on the Bandwidth application post-acquisition.",
+      });
+    }
   }
   if (twilio.trunkSid !== undefined) {
     gaps.push({
@@ -363,13 +365,15 @@ export function translatePurchaseToOrder(
         "Set requirementsPackageId on the order if regulatory bundles are needed.",
     });
   }
-  if (twilio.emergencyStatus !== undefined || twilio.emergencyAddressSid !== undefined) {
-    gaps.push({
-      twilioParam: twilio.emergencyStatus !== undefined ? "emergencyStatus" : "emergencyAddressSid",
-      reason:
-        "Emergency services configuration is handled via the Bandwidth 911 API, " +
-        "not the number order.",
-    });
+  for (const param of ["emergencyStatus", "emergencyAddressSid"] as const) {
+    if (twilio[param] !== undefined) {
+      gaps.push({
+        twilioParam: param,
+        reason:
+          "Emergency services configuration is handled via the Bandwidth 911 API, " +
+          "not the number order.",
+      });
+    }
   }
 
   return { bwOrder, gaps };
