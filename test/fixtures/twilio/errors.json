@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "captured": "2026-06-10",
+    "source": "live Twilio REST API (api.twilio.com, us1), read-only/validation-rejected requests",
+    "validationOrder": ["To (21201)", "Url (21205)", "From (21213 — documented, NOT fixture-verified; probe skipped to avoid any risk of placing a live call)"]
+  },
+  "auth401": {
+    "code": 20003,
+    "message": "Authenticate",
+    "more_info": "https://www.twilio.com/docs/errors/20003",
+    "status": 401
+  },
+  "missingTo400": {
+    "code": 21201,
+    "message": "No 'To' number is specified",
+    "more_info": "https://www.twilio.com/docs/errors/21201",
+    "status": 400
+  },
+  "missingUrl400": {
+    "code": 21205,
+    "message": "Url parameter is required.",
+    "more_info": "https://www.twilio.com/docs/errors/21205",
+    "status": 400
+  },
+  "missingFrom400_unverified": {
+    "code": 21213,
+    "message": "From phone number is required.",
+    "more_info": "https://www.twilio.com/docs/errors/21213",
+    "status": 400
+  },
+  "notFound404": {
+    "code": 20404,
+    "message": "The requested resource /2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/Calls/CA00000000000000000000000000000000.json was not found",
+    "more_info": "https://www.twilio.com/docs/errors/20404",
+    "status": 404
+  }
+}

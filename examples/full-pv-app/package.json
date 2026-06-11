@@ -1,0 +1,6 @@
+{
+  "name": "full-pv-app",
+  "private": true,
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "express": "^4.19.0", "twilio": "^5.0.0" }
+}
