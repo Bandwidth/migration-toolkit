@@ -6,3 +6,6 @@ dist/
 capture/
 
 .DS_Store
+
+# Agent worktrees / local Claude state
+.claude/
