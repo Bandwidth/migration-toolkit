@@ -5,7 +5,7 @@
     "Say": {
       "bxml": "SpeakSentence",
       "status": "supported",
-      "notes": "Plain text and the voice attribute map cleanly. Common Twilio voice aliases (alice, man, woman) and Amazon Polly voice names (e.g. Polly.Joanna, Polly.Matthew) are mapped to the nearest BW voice; truly unrecognized voices are dropped rather than passed through, to avoid BW rejecting the call. KNOWN GAP: SSML markup inside Say is not yet preserved — inline SSML is escaped to literal text and child SSML elements are dropped. Both BW SpeakSentence and Twilio Say support SSML, so this is an adapter parser/serializer gap, not a platform limit.",
+      "notes": "Plain text and the voice attribute map cleanly. Common Twilio voice aliases (alice, man, woman) and Amazon Polly voice names (e.g. Polly.Joanna, Polly.Matthew) are mapped to the nearest BW voice; truly unrecognized voices are dropped rather than passed through, to avoid BW rejecting the call. SSML markup inside Say is preserved: child elements (say-as, emphasis, break, prosody, sub, lang, etc.) pass through to SpeakSentence as raw markup while genuine text is XML-escaped. The tag set is structurally accepted by BW SpeakSentence (validated via `band bxml raw`); BW's TTS renders the standard SSML tags, and any tag it does not act on is ignored rather than failing the call.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/speakSentence",
       "attributes": {
         "voice": { "bxml": "voice", "status": "partial", "notes": "Common Twilio/Polly voice names are mapped to the nearest BW equivalent; see TWILIO_TO_BW_VOICE in translate.ts. BW supports 50+ named voices across multiple locales — the full allowlist is in BW_VOICES." },
@@ -109,7 +109,7 @@
     "Enqueue": {
       "bxml": null,
       "status": "unsupported",
-      "notes": "Bandwidth has no queue primitive (P0 gap per PRD). Contact-center queue flows cannot migrate yet.",
+      "notes": "Bandwidth has no queue primitive; contact-center queue flows cannot be translated.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/",
       "attributes": {}
     },
@@ -123,7 +123,7 @@
     "Pay": {
       "bxml": null,
       "status": "unsupported",
-      "notes": "PCI payment capture is out of scope (deferred per PRD).",
+      "notes": "PCI payment capture is out of scope for the adapter.",
       "attributes": {}
     },
     "Refer": {
@@ -152,8 +152,13 @@
       "notes": "Basic named conferences work. waitUrl hold music is NOT supported by Bandwidth; beep cues are partial.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/conference",
       "attributes": {
-        "waitUrl": { "bxml": null, "status": "unsupported", "notes": "No conference hold-music equivalent (P1 gap per PRD)." },
-        "beep": { "bxml": null, "status": "partial", "notes": "No direct beep attribute." }
+        "waitUrl": { "bxml": null, "status": "unsupported", "notes": "No conference hold-music equivalent on Bandwidth." },
+        "beep": { "bxml": null, "status": "partial", "notes": "No direct beep attribute." },
+        "muted": { "bxml": "mute", "status": "supported", "notes": "Twilio muted maps to BW Conference mute." },
+        "statusCallback": { "bxml": "conferenceEventUrl", "status": "supported", "notes": "Twilio conference statusCallback maps to BW conferenceEventUrl; event payloads differ." },
+        "startConferenceOnEnter": { "bxml": null, "status": "partial", "notes": "No verb-level equivalent; BW conference lifecycle is managed via the Conferences REST API, not the BXML verb." },
+        "endConferenceOnExit": { "bxml": null, "status": "partial", "notes": "No verb-level equivalent; manage conference teardown via the BW Conferences REST API." },
+        "maxParticipants": { "bxml": null, "status": "partial", "notes": "No verb-level maxParticipants; not enforced via the BXML Conference verb." }
       }
     },
     "Number": {

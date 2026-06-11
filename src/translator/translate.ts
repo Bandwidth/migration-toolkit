@@ -250,6 +250,8 @@ function translateVerb(
       return translateConnect(node, findings, rewrite);
     case "Start":
       return translateStart(node, findings, rewrite);
+    case "Stop":
+      return translateStop(node, findings);
     case "Enqueue":
     case "Leave":
     case "Pay":
@@ -346,7 +348,12 @@ function translateDial(
         "record attribute on Dial is ignored when the noun is Conference; set record on the <Conference> element instead.",
         findings,
       );
-    return [{ name: "Conference", children: [conference.text] }];
+    // Map the Conference attributes BW's verb supports.
+    const confAttrs: Record<string, string | undefined> = {};
+    if (conference.attrs.muted === "true") confAttrs.mute = "true";
+    if (conference.attrs.statusCallback)
+      confAttrs.conferenceEventUrl = conference.attrs.statusCallback;
+    return [{ name: "Conference", attrs: confAttrs, children: [conference.text] }];
   }
   const blocked = node.children.find((c) => c.name === "Queue" || c.name === "Client");
   if (blocked) return unsupported(blocked, findings);
@@ -398,6 +405,32 @@ function translateDial(
   return result;
 }
 
+// Twilio <Stream track>: inbound_track | outbound_track | both_tracks → BW tracks.
+const TWILIO_STREAM_TRACK_TO_BW: Record<string, string> = {
+  inbound_track: "inbound",
+  outbound_track: "outbound",
+  both_tracks: "both",
+};
+
+/** Twilio <Stream> noun → BW <StartStream>. mode is bidirectional under
+ *  <Connect> (audio flows both ways) and unidirectional under <Start> (a fork). */
+function streamToStartStream(
+  stream: TwimlNode,
+  mode: "bidirectional" | "unidirectional",
+  findings: Finding[],
+  rewrite: (u: string, k: UrlKind) => string,
+): XmlEl[] | null {
+  if (!stream.attrs.url) return unsupported(stream, findings, "Stream requires a url attribute.");
+  warn("Stream", matrix.verbs.Stream.notes, findings);
+  const attrs: Record<string, string | undefined> = {
+    name: stream.attrs.name,
+    destination: rewrite(stream.attrs.url, "stream"),
+    mode,
+    tracks: stream.attrs.track ? TWILIO_STREAM_TRACK_TO_BW[stream.attrs.track] ?? "inbound" : "inbound",
+  };
+  return [{ name: "StartStream", attrs }];
+}
+
 function translateConnect(
   node: TwimlNode,
   findings: Finding[],
@@ -410,14 +443,7 @@ function translateConnect(
       findings,
       `Connect noun <${node.children[0]?.name ?? "?"}> is not supported (ConversationRelay/VirtualAgent are out of adapter scope).`,
     );
-  if (!stream.attrs.url) return unsupported(stream, findings, "Stream requires a url attribute.");
-  warn("Stream", matrix.verbs.Stream.notes, findings);
-  return [
-    {
-      name: "StartStream",
-      attrs: { destination: rewrite(stream.attrs.url, "stream"), tracks: "inbound" },
-    },
-  ];
+  return streamToStartStream(stream, "bidirectional", findings, rewrite);
 }
 
 // Twilio <Start> with <Transcription> noun → BW <StartTranscription>.
@@ -429,11 +455,36 @@ const TWILIO_TRACK_TO_BW: Record<string, string> = {
   both_legs: "both",
 };
 
+// Twilio <Stop> with <Stream>/<Transcription> nouns → BW StopStream/StopTranscription.
+function translateStop(node: TwimlNode, findings: Finding[]): XmlEl[] | null {
+  const stream = node.children.find((c) => c.name === "Stream");
+  if (stream) {
+    if (!stream.attrs.name)
+      warn(
+        "Stop",
+        "Stop>Stream without a name: Bandwidth StopStream requires a name to identify which stream to stop.",
+        findings,
+      );
+    return [{ name: "StopStream", attrs: { name: stream.attrs.name } }];
+  }
+  const tx = node.children.find((c) => c.name === "Transcription");
+  if (tx) return [{ name: "StopTranscription", attrs: { name: tx.attrs.name } }];
+  return unsupported(
+    node,
+    findings,
+    `Stop noun <${node.children[0]?.name ?? "?"}> is not supported by the adapter.`,
+  );
+}
+
 function translateStart(
   node: TwimlNode,
   findings: Finding[],
   rewrite: (u: string, k: UrlKind) => string,
 ): XmlEl[] | null {
+  // <Start><Stream> is a unidirectional fork (audio out to the bot only).
+  const startStream = node.children.find((c) => c.name === "Stream");
+  if (startStream) return streamToStartStream(startStream, "unidirectional", findings, rewrite);
+
   const tx = node.children.find((c) => c.name === "Transcription");
   if (!tx)
     return unsupported(

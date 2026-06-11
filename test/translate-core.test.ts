@@ -24,6 +24,18 @@ describe("core verb translation", () => {
     expect(r.bxml).not.toContain("&lt;say-as");
     expect(r.bxml).toContain(`voice="julie"`);
   });
+  it("Say preserves the full SSML tag set (break, prosody, sub, lang) as raw markup", () => {
+    // Every tag here is structurally accepted by BW SpeakSentence (verified via
+    // `band bxml raw`), so it must pass through unescaped rather than be flattened.
+    const r = translateTwiml(
+      `<Response><Say>Wait<break time="500ms"/><prosody rate="slow">slowly</prosody> <sub alias="World Wide Web">WWW</sub> <lang xml:lang="es-MX">hola</lang></Say></Response>`,
+    );
+    expect(r.bxml).toContain(`<break time="500ms"/>`);
+    expect(r.bxml).toContain(`<prosody rate="slow">slowly</prosody>`);
+    expect(r.bxml).toContain(`<sub alias="World Wide Web">WWW</sub>`);
+    expect(r.bxml).toContain(`<lang xml:lang="es-MX">hola</lang>`);
+    expect(r.bxml).not.toContain("&lt;");
+  });
   it("Say still escapes genuine special characters in text", () => {
     const r = translateTwiml(`<Response><Say>Tom &amp; Jerry &lt;tag&gt;</Say></Response>`);
     expect(r.bxml).toContain(`Tom &amp; Jerry &lt;tag&gt;`);
