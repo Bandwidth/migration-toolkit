@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  schemaVersion: v1.0.0
+  name: bw-voice-adapter
+  description: voice adapter
+  annotations:
+    github.com/project-slug: Bandwidth/bw-voice-adapter
+  organization: BW
+  costCenter: 
+  platformType: AWS
+  buildPlatform: GitHub Actions
+spec:
+  type: Service
+  owner: github/band-swi
+  lifecycle: Prototype
+  

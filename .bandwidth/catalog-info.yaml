@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  schemaVersion: v1.0.0
+  name: bw-voice-adapter-location
+  description: Links to additional entities in the bw-voice-adapter repository.
+  annotations:
+    github.com/project-slug: Bandwidth/bw-voice-adapter
+spec:
+  targets:
+    - ./component.yaml
+    # - add more components using relative filepaths here
+    # - you may also rename/move the original component.yaml file
