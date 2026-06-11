@@ -153,7 +153,12 @@
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/conference",
       "attributes": {
         "waitUrl": { "bxml": null, "status": "unsupported", "notes": "No conference hold-music equivalent (P1 gap per PRD)." },
-        "beep": { "bxml": null, "status": "partial", "notes": "No direct beep attribute." }
+        "beep": { "bxml": null, "status": "partial", "notes": "No direct beep attribute." },
+        "muted": { "bxml": "mute", "status": "supported", "notes": "Twilio muted maps to BW Conference mute." },
+        "statusCallback": { "bxml": "conferenceEventUrl", "status": "supported", "notes": "Twilio conference statusCallback maps to BW conferenceEventUrl; event payloads differ." },
+        "startConferenceOnEnter": { "bxml": null, "status": "partial", "notes": "No verb-level equivalent; BW conference lifecycle is managed via the Conferences REST API, not the BXML verb." },
+        "endConferenceOnExit": { "bxml": null, "status": "partial", "notes": "No verb-level equivalent; manage conference teardown via the BW Conferences REST API." },
+        "maxParticipants": { "bxml": null, "status": "partial", "notes": "No verb-level maxParticipants; not enforced via the BXML Conference verb." }
       }
     },
     "Number": {

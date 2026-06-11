@@ -147,7 +147,9 @@ describe("Start > Transcription → StartTranscription", () => {
   });
 
   it("Start with unsupported noun produces an error", () => {
-    const r = translateTwiml(`<Response><Start><Stream url="wss://x.test/s"/></Start></Response>`);
+    // Siprec is a real Twilio <Start> noun the adapter does not map (Stream and
+    // Transcription under <Start> ARE supported).
+    const r = translateTwiml(`<Response><Start><Siprec name="s1"/></Start></Response>`);
     expect(r.hasErrors).toBe(true);
   });
 });
