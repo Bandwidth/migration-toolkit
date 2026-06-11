@@ -1,3 +1,5 @@
+import { TokenManager } from "./token.js";
+
 export interface CreateCallOpts {
   to: string;
   from: string;
@@ -30,20 +32,37 @@ export interface BwClient {
   getCall(callId: string): Promise<GetCallResult>;
 }
 
+const HOSTS = {
+  prod: { api: "https://api.bandwidth.com", voice: "https://voice.bandwidth.com" },
+  test: { api: "https://test.api.bandwidth.com", voice: "https://test.voice.bandwidth.com" },
+} as const;
+
 export function createBwClient(cfg: {
   accountId: string;
-  username: string;
-  password: string;
+  clientId: string;
+  clientSecret: string;
   applicationId: string;
-  baseUrl?: string;
+  environment?: "prod" | "test";
+  /** Overrides for tests/staging; default to the environment's standard hosts. */
+  voiceBaseUrl?: string;
+  apiHost?: string;
+  fetchImpl?: typeof fetch;
 }): BwClient {
-  const base = cfg.baseUrl ?? "https://voice.bandwidth.com/api/v2";
-  const auth = "Basic " + Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
+  const hosts = HOSTS[cfg.environment ?? "prod"];
+  const base = cfg.voiceBaseUrl ?? `${hosts.voice}/api/v2`;
+  const fetchImpl = cfg.fetchImpl ?? fetch;
+  const tokens = new TokenManager({
+    clientId: cfg.clientId,
+    clientSecret: cfg.clientSecret,
+    apiHost: cfg.apiHost ?? hosts.api,
+    fetchImpl,
+  });
+  const authHeader = async () => `Bearer ${await tokens.getToken()}`;
   return {
     async createCall({ to, from, answerUrl }) {
-      const res = await fetch(`${base}/accounts/${cfg.accountId}/calls`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: auth },
+        headers: { "Content-Type": "application/json", Authorization: await authHeader() },
         body: JSON.stringify({ to, from, answerUrl, applicationId: cfg.applicationId }),
       });
       if (!res.ok)
@@ -52,17 +71,17 @@ export function createBwClient(cfg: {
       return { callId: json.callId };
     },
     async modifyCall(callId, opts) {
-      const res = await fetch(`${base}/accounts/${cfg.accountId}/calls/${callId}`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${callId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: auth },
+        headers: { "Content-Type": "application/json", Authorization: await authHeader() },
         body: JSON.stringify(opts),
       });
       if (!res.ok)
         throw new Error(`Bandwidth modifyCall failed: ${res.status} ${await res.text()}`);
     },
     async getCall(callId) {
-      const res = await fetch(`${base}/accounts/${cfg.accountId}/calls/${callId}`, {
-        headers: { Accept: "application/json", Authorization: auth },
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${callId}`, {
+        headers: { Accept: "application/json", Authorization: await authHeader() },
       });
       if (!res.ok)
         throw new Error(`Bandwidth getCall failed: ${res.status} ${await res.text()}`);

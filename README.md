@@ -64,7 +64,8 @@ You'll get a migration-complexity score and a per-feature "works as-is / heads-u
 | `ADAPTER_ACCOUNT_SID` / `ADAPTER_AUTH_TOKEN` | What the customer's Twilio SDK + webhook-signature validation use |
 | `PUBLIC_BASE_URL` | Public HTTPS base of this adapter |
 | `CUSTOMER_VOICE_URL` | The customer's Twilio voice webhook (inbound calls) |
-| `BW_ACCOUNT_ID` / `BW_USERNAME` / `BW_PASSWORD` / `BW_APPLICATION_ID` | Bandwidth Voice API credentials |
+| `BW_ACCOUNT_ID` / `BW_CLIENT_ID` / `BW_CLIENT_SECRET` / `BW_APPLICATION_ID` | Bandwidth Voice API credentials (OAuth2 client-credentials) |
+| `BW_ENVIRONMENT` | Optional — `test` targets BW's test hosts; defaults to `prod` |
 | `ADAPTER_LOG=1` | Optional — enable request logging |
 
 ```bash
