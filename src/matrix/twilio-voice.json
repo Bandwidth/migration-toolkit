@@ -109,7 +109,7 @@
     "Enqueue": {
       "bxml": null,
       "status": "unsupported",
-      "notes": "Bandwidth has no queue primitive (P0 gap per PRD). Contact-center queue flows cannot migrate yet.",
+      "notes": "Bandwidth has no queue primitive; contact-center queue flows cannot be translated.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/",
       "attributes": {}
     },
@@ -123,7 +123,7 @@
     "Pay": {
       "bxml": null,
       "status": "unsupported",
-      "notes": "PCI payment capture is out of scope (deferred per PRD).",
+      "notes": "PCI payment capture is out of scope for the adapter.",
       "attributes": {}
     },
     "Refer": {
@@ -152,7 +152,7 @@
       "notes": "Basic named conferences work. waitUrl hold music is NOT supported by Bandwidth; beep cues are partial.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/conference",
       "attributes": {
-        "waitUrl": { "bxml": null, "status": "unsupported", "notes": "No conference hold-music equivalent (P1 gap per PRD)." },
+        "waitUrl": { "bxml": null, "status": "unsupported", "notes": "No conference hold-music equivalent on Bandwidth." },
         "beep": { "bxml": null, "status": "partial", "notes": "No direct beep attribute." },
         "muted": { "bxml": "mute", "status": "supported", "notes": "Twilio muted maps to BW Conference mute." },
         "statusCallback": { "bxml": "conferenceEventUrl", "status": "supported", "notes": "Twilio conference statusCallback maps to BW conferenceEventUrl; event payloads differ." },

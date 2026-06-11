@@ -13,7 +13,7 @@ A phone call on Twilio or Bandwidth is driven by a little script the phone netwo
 
 They're the same concepts in different words — like British vs. American English. This adapter is a **live translator** that sits in the middle: when a call comes in, Bandwidth asks the adapter "what do I do?", the adapter asks the customer's *unchanged* Twilio app the same question, gets the Twilio-language answer back, translates it to Bandwidth-language on the spot, and hands it over. The customer's code never changes — they just point it at the adapter.
 
-> **Why it matters:** moving a phone app from Twilio to Bandwidth normally means an expensive rewrite, which kills deals. This turns that rewrite into a one-line config change — so customers can move their traffic (and cost) to Bandwidth's network without touching their app.
+> **Why it matters:** moving a voice application from Twilio to Bandwidth normally means rewriting it against a different API. This adapter turns that rewrite into a one-line configuration change — the app keeps running unchanged while its calls flow over Bandwidth.
 
 The translation is a fixed rulebook, not an AI guessing — for live phone calls, "mostly right" isn't good enough.
 
@@ -35,12 +35,10 @@ When a customer uses something the adapter *can't* do yet, it **says so clearly 
 
 ## What it can't do yet
 
-- **Call queues** ("you're caller number 3, please hold") — Bandwidth has no queue feature to translate to. This is the biggest gap and the top thing for Bandwidth to build.
+- **Call queues** ("you're caller number 3, please hold") — Bandwidth has no queue primitive to translate to. This is the most significant current limitation.
 - **Conference hold music** — no Bandwidth equivalent.
-- **Speech recognition** — the adapter translates it correctly, but it needs to be enabled on the Bandwidth account (it was rejected on our test account).
+- **Speech recognition** — the adapter translates it correctly, but it must be enabled on the Bandwidth account.
 - **Pausing/resuming a recording mid-call** — handled differently on Bandwidth (a later item).
-
-The strategic write-ups (what to build next, and why queues are #1) live in the team knowledge base under *Voice API Adapter*.
 
 ---
 
