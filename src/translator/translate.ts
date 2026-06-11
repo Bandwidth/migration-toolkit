@@ -340,6 +340,12 @@ function translateDial(
       else if (conference.attrs[attr] !== undefined && mapping.status === "partial")
         warn("Conference", `Conference ${attr}: ${mapping.notes}`, findings);
     }
+    if (node.attrs.record && node.attrs.record !== "do-not-record")
+      warn(
+        "Dial",
+        "record attribute on Dial is ignored when the noun is Conference; set record on the <Conference> element instead.",
+        findings,
+      );
     return [{ name: "Conference", children: [conference.text] }];
   }
   const blocked = node.children.find((c) => c.name === "Queue" || c.name === "Client");
@@ -380,6 +386,12 @@ function translateDial(
   const result: XmlEl[] = [];
   if (shouldRecord) {
     const isDual = record === "record-from-answer-dual" || record === "record-from-ringing-dual";
+    if (record === "record-from-ringing" || record === "record-from-ringing-dual")
+      warn(
+        "Dial",
+        "record-from-ringing: Bandwidth StartRecording runs at answer-time, so pre-answer ringing audio will not be captured.",
+        findings,
+      );
     result.push({ name: "StartRecording", attrs: isDual ? { multiChannel: "true" } : undefined });
   }
   result.push({ name: "Transfer", attrs, children: targets });
