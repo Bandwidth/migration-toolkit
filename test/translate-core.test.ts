@@ -9,7 +9,8 @@ describe("core verb translation", () => {
     expect(r.findings.some((f) => f.severity === "warning" && /voice/i.test(f.message))).toBe(true);
   });
   it("Say drops an unrecognized voice rather than emitting an invalid one", () => {
-    const r = translateTwiml(`<Response><Say voice="Polly.Joanna">Hi</Say></Response>`);
+    // Polly.Joanna is now mapped to salli; use a genuinely unknown voice here.
+    const r = translateTwiml(`<Response><Say voice="Polly.UnknownXyz">Hi</Say></Response>`);
     expect(r.bxml).toContain(`<SpeakSentence>Hi</SpeakSentence>`);
     expect(r.bxml).not.toContain("voice=");
     expect(r.findings.some((f) => f.severity === "warning")).toBe(true);

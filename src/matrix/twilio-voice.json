@@ -5,21 +5,22 @@
     "Say": {
       "bxml": "SpeakSentence",
       "status": "supported",
-      "notes": "Plain text and the voice attribute map cleanly (voice passed through with a warning). KNOWN GAP: SSML markup inside Say is not yet preserved — inline SSML is escaped to literal text and child SSML elements are dropped. Both BW SpeakSentence and Twilio Say support SSML, so this is an adapter parser/serializer gap, not a platform limit.",
+      "notes": "Plain text and the voice attribute map cleanly. Common Twilio voice aliases (alice, man, woman) and Amazon Polly voice names (e.g. Polly.Joanna, Polly.Matthew) are mapped to the nearest BW voice; truly unrecognized voices are dropped rather than passed through, to avoid BW rejecting the call. KNOWN GAP: SSML markup inside Say is not yet preserved — inline SSML is escaped to literal text and child SSML elements are dropped. Both BW SpeakSentence and Twilio Say support SSML, so this is an adapter parser/serializer gap, not a platform limit.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/speakSentence",
       "attributes": {
-        "voice": { "bxml": "voice", "status": "partial", "notes": "No 1:1 voice-name mapping." },
+        "voice": { "bxml": "voice", "status": "partial", "notes": "Common Twilio/Polly voice names are mapped to the nearest BW equivalent; see TWILIO_TO_BW_VOICE in translate.ts. BW supports 50+ named voices across multiple locales — the full allowlist is in BW_VOICES." },
         "language": { "bxml": "locale", "status": "partial", "notes": "Locale formats differ." },
         "loop": { "bxml": null, "status": "partial", "notes": "Emitted once; BXML has no loop attribute." }
       }
     },
     "Play": {
-      "bxml": "PlayAudio",
+      "bxml": "PlayAudio / SendDtmf",
       "status": "supported",
-      "notes": "",
+      "notes": "When a src URL is present it maps to PlayAudio. When the digits attribute is present it maps to SendDtmf (BW verb that sends DTMF tones mid-call). Both can appear in the same element: PlayAudio is emitted first, then SendDtmf. Twilio pause characters w (0.5 s), W (1 s), and comma (0.5 s) are passed through to BW SendDtmf unchanged — BW supports the same pause encoding.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/playAudio",
       "attributes": {
-        "loop": { "bxml": null, "status": "partial", "notes": "Emitted once; BXML has no loop attribute." }
+        "loop": { "bxml": null, "status": "partial", "notes": "Emitted once; BXML has no loop attribute." },
+        "digits": { "bxml": "SendDtmf", "status": "supported", "notes": "Maps to BW SendDtmf verb. Valid chars: 0-9, *, #, a-d, A-D, w (0.5s pause), W (1s pause), comma (0.5s pause)." }
       }
     },
     "Gather": {
@@ -81,12 +82,28 @@
     "Dial": {
       "bxml": "Transfer",
       "status": "partial",
-      "notes": "Number/Sip nouns map to Transfer; Conference noun maps to Conference; Queue and Client nouns are unsupported. Deep Dial semantics (answerOnBridge, child-call status propagation) are not replicated in P0.",
+      "notes": "Number/Sip nouns map to Transfer; Conference noun maps to Conference; Queue and Client nouns are unsupported. Deep Dial semantics (answerOnBridge, child-call status propagation) are not replicated in P0. When the record attribute is set to a recording-enabled value, a BW StartRecording verb is emitted immediately before the Transfer. Dual-channel variants (record-from-answer-dual, record-from-ringing-dual) emit StartRecording with multiChannel=true.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/transfer",
       "attributes": {
         "callerId": { "bxml": "transferCallerId", "status": "supported" },
         "timeout": { "bxml": "callTimeout", "status": "supported" },
-        "action": { "bxml": "transferCompleteUrl", "status": "supported" }
+        "action": { "bxml": "transferCompleteUrl", "status": "supported" },
+        "record": {
+          "bxml": "StartRecording",
+          "status": "partial",
+          "notes": "record-from-answer and record-from-ringing emit a bare StartRecording before Transfer. Dual variants emit StartRecording with multiChannel=true. do-not-record and the default (absent) emit nothing. BW recordingAvailableUrl is not mapped from Twilio's recordingStatusCallback — set it separately if needed."
+        }
+      }
+    },
+    "Start": {
+      "bxml": "StartTranscription",
+      "status": "partial",
+      "notes": "The Transcription noun under Start maps to BW StartTranscription. statusCallbackUrl maps to transcriptionEventUrl; track (inbound_track/outbound_track/both_legs) maps to BW tracks (inbound/outbound/both). Other Start nouns (Siprec, VirtualAgent) are unsupported. A StopTranscription is NOT automatically emitted — add one explicitly downstream if you need to stop the transcription.",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/programmable-voice/bxml/startTranscription",
+      "attributes": {
+        "statusCallbackUrl": { "bxml": "transcriptionEventUrl", "status": "supported" },
+        "name": { "bxml": "name", "status": "supported" },
+        "track": { "bxml": "tracks", "status": "supported", "notes": "inbound_track→inbound, outbound_track→outbound, both_legs→both." }
       }
     },
     "Enqueue": {
