@@ -18,9 +18,10 @@ const app = buildApp(
     fetchImpl: fetch,
     bwClient: createBwClient({
       accountId: env("BW_ACCOUNT_ID"),
-      username: env("BW_USERNAME"),
-      password: env("BW_PASSWORD"),
+      clientId: env("BW_CLIENT_ID"),
+      clientSecret: env("BW_CLIENT_SECRET"),
       applicationId: env("BW_APPLICATION_ID"),
+      environment: process.env.BW_ENVIRONMENT === "test" ? "test" : "prod",
     }),
   },
 );
