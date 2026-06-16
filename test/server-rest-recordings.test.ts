@@ -36,6 +36,7 @@ function makeApp(recordings: BwRecording[]) {
       callId,
       recordingId,
     })),
+    updateRecording: vi.fn(async (_callId: string, _state: "paused" | "recording") => {}),
     getRecordingMedia: vi.fn(async (_callId: string, _recordingId: string) => ({
       body: Readable.from([Buffer.from("RIFFfakewavbytes")]),
       contentType: "audio/vnd.wave",
@@ -157,5 +158,58 @@ describe("GET /2010-04-01/Accounts/:sid/Recordings/:recordingSid", () => {
     });
     expect(res.statusCode).toBe(404);
     expect(res.json().code).toBe(20404);
+  });
+});
+
+describe("POST /2010-04-01/Accounts/:sid/Calls/:callSid/Recordings/:recordingSid.json (control)", () => {
+  async function listThenSid(app: ReturnType<typeof makeApp>["app"]) {
+    const callSid = await createCall(app);
+    const list = await app.inject({
+      method: "GET",
+      url: `/2010-04-01/Accounts/AC123/Calls/${callSid}/Recordings.json`,
+      headers: { authorization: auth },
+    });
+    return { callSid, recordingSid: list.json().recordings[0].sid as string };
+  }
+
+  it("Status=paused pauses the BW recording", async () => {
+    const { app, bwClient } = makeApp([bwRecording]);
+    const { callSid, recordingSid } = await listThenSid(app);
+    const res = await app.inject({
+      method: "POST",
+      url: `/2010-04-01/Accounts/AC123/Calls/${callSid}/Recordings/${recordingSid}.json`,
+      headers: { authorization: auth },
+      payload: { Status: "paused" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(bwClient.updateRecording).toHaveBeenCalledWith("c-out-1", "paused");
+    expect(res.json().status).toBe("paused");
+  });
+
+  it("Status=in-progress resumes the BW recording (state=recording)", async () => {
+    const { app, bwClient } = makeApp([bwRecording]);
+    const { callSid, recordingSid } = await listThenSid(app);
+    const res = await app.inject({
+      method: "POST",
+      url: `/2010-04-01/Accounts/AC123/Calls/${callSid}/Recordings/${recordingSid}.json`,
+      headers: { authorization: auth },
+      payload: { Status: "in-progress" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(bwClient.updateRecording).toHaveBeenCalledWith("c-out-1", "recording");
+    expect(res.json().status).toBe("in-progress");
+  });
+
+  it("Status=stopped fails loudly — Bandwidth has no REST recording-stop", async () => {
+    const { app, bwClient } = makeApp([bwRecording]);
+    const { callSid, recordingSid } = await listThenSid(app);
+    const res = await app.inject({
+      method: "POST",
+      url: `/2010-04-01/Accounts/AC123/Calls/${callSid}/Recordings/${recordingSid}.json`,
+      headers: { authorization: auth },
+      payload: { Status: "stopped" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(bwClient.updateRecording).not.toHaveBeenCalled();
   });
 });

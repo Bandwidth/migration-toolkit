@@ -56,6 +56,8 @@ export interface BwClient {
   listRecordings(callId: string): Promise<BwRecording[]>;
   getRecording(callId: string, recordingId: string): Promise<BwRecording>;
   getRecordingMedia(callId: string, recordingId: string): Promise<BwMedia>;
+  /** Pause ("paused") or resume ("recording") the active recording on a call. */
+  updateRecording(callId: string, state: "paused" | "recording"): Promise<void>;
 }
 
 const HOSTS = {
@@ -146,6 +148,15 @@ export function createBwClient(cfg: {
         body: Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
         contentType: res.headers.get("content-type") ?? "application/octet-stream",
       };
+    },
+    async updateRecording(callId, state) {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${callId}/recording`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: await authHeader() },
+        body: JSON.stringify({ state }),
+      });
+      if (!res.ok)
+        throw new Error(`Bandwidth updateRecording failed: ${res.status} ${await res.text()}`);
     },
   };
 }

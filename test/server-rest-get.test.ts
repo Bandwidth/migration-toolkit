@@ -27,6 +27,7 @@ function makeApp(bwState: Partial<GetCallResult>) {
     listRecordings: vi.fn(),
     getRecording: vi.fn(),
     getRecordingMedia: vi.fn(),
+    updateRecording: vi.fn(),
   };
   const app = buildApp(config, { fetchImpl: fetch, bwClient });
   return { app, bwClient };

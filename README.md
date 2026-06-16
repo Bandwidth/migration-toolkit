@@ -21,7 +21,7 @@ The translation is a fixed rulebook, not an AI guessing — for live phone calls
 
 ## What works today
 
-Validated with **213 automated tests**, checked against Bandwidth's own tooling, and proven on **real Twilio and real Bandwidth phone calls**:
+Validated with **216 automated tests**, checked against Bandwidth's own tooling, and proven on **real Twilio and real Bandwidth phone calls**:
 
 - Speaking text (including SSML touches like emphasis and "read this as a phone number")
 - Playing audio, collecting key presses **and spoken input**, sending touch-tones
@@ -39,7 +39,7 @@ When a customer uses something the adapter *can't* do yet, it **says so clearly 
 - **Call queues** ("you're caller number 3, please hold") — Bandwidth has no queue primitive to translate to. This is the most significant current limitation.
 - **Conference hold music** — no Bandwidth equivalent.
 - **Speech recognition** — the adapter translates it correctly, but it must be enabled on the Bandwidth account.
-- **Pausing/resuming a recording mid-call** — handled differently on Bandwidth (a later item).
+- **Stopping a recording via REST** — Bandwidth pauses/resumes recordings over REST (supported), but has no REST *stop* (its `StopRecording` is a BXML verb), so `Status=stopped` fails loudly rather than silently.
 
 ---
 
@@ -71,7 +71,7 @@ You'll get a migration-complexity score and a per-feature "works as-is / heads-u
 
 ```bash
 npm start          # starts the adapter on :3000
-npm test           # 213 tests
+npm test           # 216 tests
 npm run typecheck
 ```
 
@@ -87,6 +87,7 @@ Point your Bandwidth Voice application's callback at `$PUBLIC_BASE_URL/bw/initia
 | `GET /Calls/{sid}/Recordings.json` | `calls(sid).recordings.list()` | list a call's recordings |
 | `GET /Recordings/{sid}.json` | `recordings(sid).fetch()` | recording metadata |
 | `GET /Recordings/{sid}.{mp3,wav}` | recording media URL | audio, stream-proxied from Bandwidth |
+| `POST /Calls/{sid}/Recordings/{recSid}.json` | `recordings(sid).update({status})` | pause (`paused`) / resume (`in-progress`); `stopped` fails loudly (no BW REST stop) |
 
 Unknown calls/recordings return Twilio's `20404` body; bad credentials return its `20003`. Call/recording state is in-memory (single-instance); a recording must be listed before it can be fetched by SID on a fresh instance.
 

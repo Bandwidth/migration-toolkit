@@ -203,6 +203,32 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   app.get("/2010-04-01/Accounts/:accountSid/Recordings/:recordingSid.mp3", mediaHandler);
   app.get("/2010-04-01/Accounts/:accountSid/Recordings/:recordingSid.wav", mediaHandler);
 
+  // Pause/resume a live recording. Twilio Status=paused|in-progress map to BW
+  // recording state paused|recording. Status=stopped has no BW REST equivalent
+  // (StopRecording is BXML-verb-only), so it fails loudly rather than silently.
+  app.post(
+    "/2010-04-01/Accounts/:accountSid/Calls/:callSid/Recordings/:recordingSid.json",
+    async (req, reply) => {
+      const header = req.headers.authorization ?? "";
+      const expected =
+        "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+      if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+      const { recordingSid } = req.params as { recordingSid: string };
+      const ref = store.getRecording(recordingSid);
+      if (!ref) return reply.code(404).send(twilioErrors.notFound(config.accountSid, recordingSid));
+      const status = (req.body as Record<string, string>).Status;
+      const stateByStatus: Record<string, "paused" | "recording"> = {
+        paused: "paused",
+        "in-progress": "recording",
+      };
+      const state = stateByStatus[status];
+      if (!state) return reply.code(400).send(twilioErrors.recordingControl400(status));
+      await deps.bwClient.updateRecording(ref.bwCallId, state);
+      const rec = await deps.bwClient.getRecording(ref.bwCallId, ref.bwRecordingId);
+      return reply.send({ ...recordingResource(rec, config.accountSid), status });
+    },
+  );
+
   app.get("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", async (req, reply) => {
     const header = req.headers.authorization ?? "";
     const expected =
