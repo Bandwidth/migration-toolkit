@@ -8,11 +8,32 @@ export function twilioDate(d: Date): string {
   return d.toUTCString().replace(/GMT$/, "+0000");
 }
 
+/**
+ * Map a Bandwidth call state to the nearest Twilio call status.
+ * BW's call-state enum is not fully enumerated in public docs; "active" and
+ * "disconnected" are documented. Unknown states fall back to "in-progress".
+ */
+export function bwStateToTwilioStatus(state: string): string {
+  switch (state) {
+    case "active":
+      return "in-progress";
+    case "disconnected":
+      return "completed";
+    default:
+      return "in-progress";
+  }
+}
+
 export function createdCallResource(opts: {
   sid: string;
   accountSid: string;
   to: string;
   from: string;
+  direction?: string;
+  status?: string;
+  startTime?: string;
+  endTime?: string;
+  duration?: string;
   now?: Date;
 }): Record<string, unknown> {
   const { sid, accountSid, to, from } = opts;
@@ -26,9 +47,9 @@ export function createdCallResource(opts: {
     caller_name: null,
     date_created: date,
     date_updated: date,
-    direction: "outbound-api",
-    duration: null,
-    end_time: null,
+    direction: opts.direction ?? "outbound-api",
+    duration: opts.duration ?? null,
+    end_time: opts.endTime ? twilioDate(new Date(opts.endTime)) : null,
     forwarded_from: null,
     from,
     from_formatted: from,
@@ -39,8 +60,8 @@ export function createdCallResource(opts: {
     price_unit: "USD",
     queue_time: "0",
     sid,
-    start_time: null,
-    status: "queued",
+    start_time: opts.startTime ? twilioDate(new Date(opts.startTime)) : null,
+    status: opts.status ?? "queued",
     subresource_uris: {
       events: `${base}/Events.json`,
       notifications: `${base}/Notifications.json`,
@@ -85,5 +106,30 @@ export const twilioErrors = {
     message: "From phone number is required.",
     more_info: "https://www.twilio.com/docs/errors/21213",
     status: 400,
+  },
+  /** 404 for an unknown call; message embeds the request path, matching live Twilio. */
+  notFound(accountSid: string, callSid: string) {
+    return {
+      code: 20404,
+      message: `The requested resource /2010-04-01/Accounts/${accountSid}/Calls/${callSid}.json was not found`,
+      more_info: "https://www.twilio.com/docs/errors/20404",
+      status: 404,
+    };
+  },
+  /**
+   * 400 for an unsupported recording-control Status. Adapter-specific (not a
+   * fixture-verified Twilio code): Bandwidth's recording REST does pause/resume
+   * only — there is no REST stop (StopRecording is a BXML verb).
+   */
+  recordingControl400(status: string) {
+    return {
+      code: 21220,
+      message:
+        status === "stopped"
+          ? "Status=stopped is not supported: Bandwidth has no REST recording-stop (StopRecording is a BXML verb only). Use Status=paused or in-progress."
+          : `Unsupported recording Status "${status ?? ""}": use paused (pause) or in-progress (resume).`,
+      more_info: "https://www.twilio.com/docs/errors/21220",
+      status: 400,
+    };
   },
 } as const;

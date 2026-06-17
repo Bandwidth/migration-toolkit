@@ -33,6 +33,7 @@ describe("CallStore", () => {
     const store = new CallStore();
     store.put("c-1", {
       sid: toCallSid("c-1"),
+      bwCallId: "c-1",
       from: "+1",
       to: "+2",
       direction: "inbound",

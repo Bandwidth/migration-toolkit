@@ -43,6 +43,18 @@ describe("createBwClient (OAuth2 Bearer against the Voice API)", () => {
     expect(callReq[1].headers.Authorization).toBe("Bearer tok-abc");
   });
 
+  it("modifyCall sends the Bearer token to the per-call endpoint", async () => {
+    const fetchImpl = fetchWithToken({}, 200);
+    const client = createBwClient({ ...base, fetchImpl });
+
+    await client.modifyCall("c-1", { state: "completed" });
+
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const modReq = calls.find(([u]) => String(u).endsWith("/calls/c-1"))!;
+    expect(modReq[1].headers.Authorization).toBe("Bearer tok-abc");
+    expect(modReq[1].method).toBe("POST");
+  });
+
   it("targets BW test hosts when environment is 'test'", async () => {
     const fetchImpl = fetchWithToken({ callId: "c-2" }, 201);
     const client = createBwClient({ ...base, environment: "test", fetchImpl });
