@@ -8,7 +8,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-// A fetch that returns a token from the OAuth endpoint and recorded data elsewhere.
+// A fetch that returns a token from the OAuth endpoint and call data elsewhere.
 function fetchWithToken(callResponse: unknown, status = 200) {
   return vi.fn(async (url: string) => {
     if (String(url).endsWith("/api/v1/oauth2/token"))
@@ -53,5 +53,16 @@ describe("createBwClient (OAuth2 Bearer against the Voice API)", () => {
     const modReq = calls.find(([u]) => String(u).endsWith("/calls/c-1"))!;
     expect(modReq[1].headers.Authorization).toBe("Bearer tok-abc");
     expect(modReq[1].method).toBe("POST");
+  });
+
+  it("targets BW test hosts when environment is 'test'", async () => {
+    const fetchImpl = fetchWithToken({ callId: "c-2" }, 201);
+    const client = createBwClient({ ...base, environment: "test", fetchImpl });
+
+    await client.createCall({ to: "+1", from: "+2", answerUrl: "https://adapter.test/x" });
+
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.some(([u]) => String(u) === "https://test.api.bandwidth.com/api/v1/oauth2/token")).toBe(true);
+    expect(calls.some(([u]) => String(u).startsWith("https://test.voice.bandwidth.com"))).toBe(true);
   });
 });

@@ -221,3 +221,24 @@ describe("SpeakSentence voice mapping – expanded BW voice allowlist", () => {
     expect(r.findings.some((f) => f.severity === "warning")).toBe(true);
   });
 });
+
+// ─── Refer → Refer (SIP REFER) ───────────────────────────────────────────────
+describe("Refer → Refer", () => {
+  const rewrite = { rewriteUrl: (u: string) => `https://adapter.test/bw/continue?next=${encodeURIComponent(u)}` };
+
+  it("maps <Refer><Sip> to BW <Refer><SipUri> with referCompleteUrl rewritten through the adapter", () => {
+    const r = translateTwiml(
+      `<Response><Refer action="/refer-done" method="POST"><Sip>sip:alice@atlanta.example.com</Sip></Refer></Response>`,
+      rewrite,
+    );
+    expect(r.bxml).toContain(`<SipUri>sip:alice@atlanta.example.com</SipUri>`);
+    expect(r.bxml).toContain(`referCompleteUrl="https://adapter.test/bw/continue?next=`);
+    expect(r.bxml).toContain(`referCompleteMethod="POST"`);
+    expect(r.hasErrors).toBe(false);
+  });
+
+  it("a Refer without a <Sip> child is a loud failure (BW Refer is SIP-only)", () => {
+    const r = translateTwiml(`<Response><Refer><Number>+15552223333</Number></Refer></Response>`);
+    expect(r.hasErrors).toBe(true);
+  });
+});

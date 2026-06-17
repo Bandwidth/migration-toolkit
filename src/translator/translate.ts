@@ -252,10 +252,11 @@ function translateVerb(
       return translateStart(node, findings, rewrite);
     case "Stop":
       return translateStop(node, findings);
+    case "Refer":
+      return translateRefer(node, findings, rewrite);
     case "Enqueue":
     case "Leave":
     case "Pay":
-    case "Refer":
     case "Queue":
       return unsupported(node, findings);
     default:
@@ -474,6 +475,31 @@ function translateStop(node: TwimlNode, findings: Finding[]): XmlEl[] | null {
     findings,
     `Stop noun <${node.children[0]?.name ?? "?"}> is not supported by the adapter.`,
   );
+}
+
+// Twilio <Refer><Sip> → BW <Refer><SipUri>. SIP REFER only; Bandwidth supports
+// this solely on inbound SIP URI calls (a PSTN leg cannot be REFER'd).
+function translateRefer(
+  node: TwimlNode,
+  findings: Finding[],
+  rewrite: (u: string, k: UrlKind) => string,
+): XmlEl[] | null {
+  const sip = node.children.find((c) => c.name === "Sip");
+  if (!sip || !sip.text)
+    return unsupported(
+      node,
+      findings,
+      "Refer requires a <Sip> child: Bandwidth Refer sends a SIP REFER and only accepts a SIP URI.",
+    );
+  warn(
+    "Refer",
+    "Refer is translated, but Bandwidth only honors it on inbound SIP URI calls — a PSTN call leg cannot be REFER'd.",
+    findings,
+  );
+  const attrs: Record<string, string | undefined> = {};
+  if (node.attrs.action) attrs.referCompleteUrl = rewrite(node.attrs.action, "action");
+  if (node.attrs.method) attrs.referCompleteMethod = node.attrs.method;
+  return [{ name: "Refer", attrs, children: [{ name: "SipUri", children: [sip.text] }] }];
 }
 
 function translateStart(

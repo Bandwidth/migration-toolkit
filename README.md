@@ -21,7 +21,7 @@ The translation is a fixed rulebook, not an AI guessing — for live phone calls
 
 ## What works today
 
-Validated with **216 automated tests**, checked against Bandwidth's own tooling, and proven on **real Twilio and real Bandwidth phone calls**:
+Validated with **219 automated tests**, checked against Bandwidth's own tooling, and proven on **real Twilio and real Bandwidth phone calls**:
 
 - Speaking text (including SSML touches like emphasis and "read this as a phone number")
 - Playing audio, collecting key presses **and spoken input**, sending touch-tones
@@ -71,7 +71,7 @@ You'll get a migration-complexity score and a per-feature "works as-is / heads-u
 
 ```bash
 npm start          # starts the adapter on :3000
-npm test           # 216 tests
+npm test           # 219 tests
 npm run typecheck
 ```
 
