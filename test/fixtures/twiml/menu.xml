@@ -1,0 +1,6 @@
+<Response>
+  <Gather action="/route" numDigits="1" timeout="6">
+    <Say voice="alice">Press 1 for sales, 2 to leave a message.</Say>
+  </Gather>
+  <Record action="/voicemail" maxLength="30"/>
+</Response>

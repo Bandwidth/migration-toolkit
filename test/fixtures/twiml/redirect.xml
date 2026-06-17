@@ -1,0 +1,4 @@
+<Response>
+  <Pause length="2"/>
+  <Redirect>/next-step</Redirect>
+</Response>

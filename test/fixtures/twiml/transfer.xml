@@ -1,0 +1,6 @@
+<Response>
+  <Say voice="Polly.Joanna">Connecting you to an agent.</Say>
+  <Dial callerId="+19195550000" action="/after" record="record-from-answer">
+    <Number>+19195550100</Number>
+  </Dial>
+</Response>

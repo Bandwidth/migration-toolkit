@@ -1,0 +1,5 @@
+<Response>
+  <Dial>
+    <Conference muted="true" statusCallback="/conf-events">support</Conference>
+  </Dial>
+</Response>
