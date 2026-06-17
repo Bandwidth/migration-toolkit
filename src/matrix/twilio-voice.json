@@ -127,10 +127,14 @@
       "attributes": {}
     },
     "Refer": {
-      "bxml": null,
-      "status": "unsupported",
-      "notes": "SIP REFER not translated in P0.",
-      "attributes": {}
+      "bxml": "Refer",
+      "status": "partial",
+      "notes": "Twilio <Refer><Sip> maps to BW <Refer><SipUri>. action maps to referCompleteUrl (rewritten through the adapter so the Refer-complete callback returns translated BXML); method maps to referCompleteMethod. Bandwidth honors Refer only on inbound SIP URI calls — a PSTN call leg cannot be REFER'd — so this is partial by platform constraint, not a translation gap. A Refer without a <Sip> child fails loudly (BW Refer accepts only a SIP URI).",
+      "docsUrl": "https://dev.bandwidth.com/docs/voice/programmable-voice/bxml/refer/",
+      "attributes": {
+        "action": { "bxml": "referCompleteUrl", "status": "supported" },
+        "method": { "bxml": "referCompleteMethod", "status": "supported" }
+      }
     },
     "Connect": {
       "bxml": "StartStream",
