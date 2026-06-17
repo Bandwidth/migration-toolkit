@@ -1,3 +1,5 @@
+import { TokenManager } from "./token.js";
+
 export interface CreateCallOpts {
   to: string;
   from: string;
@@ -8,20 +10,39 @@ export interface BwClient {
   createCall(opts: CreateCallOpts): Promise<{ callId: string }>;
 }
 
+const HOSTS = {
+  prod: { api: "https://api.bandwidth.com", voice: "https://voice.bandwidth.com" },
+  test: { api: "https://test.api.bandwidth.com", voice: "https://test.voice.bandwidth.com" },
+} as const;
+
 export function createBwClient(cfg: {
   accountId: string;
-  username: string;
-  password: string;
+  clientId: string;
+  clientSecret: string;
   applicationId: string;
-  baseUrl?: string;
+  environment?: "prod" | "test";
+  /** Overrides for tests/staging; default to the environment's standard hosts. */
+  voiceBaseUrl?: string;
+  apiHost?: string;
+  fetchImpl?: typeof fetch;
 }): BwClient {
-  const base = cfg.baseUrl ?? "https://voice.bandwidth.com/api/v2";
-  const auth = "Basic " + Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
+  const hosts = HOSTS[cfg.environment ?? "prod"];
+  const base = cfg.voiceBaseUrl ?? `${hosts.voice}/api/v2`;
+  const fetchImpl = cfg.fetchImpl ?? fetch;
+  const tokens = new TokenManager({
+    clientId: cfg.clientId,
+    clientSecret: cfg.clientSecret,
+    apiHost: cfg.apiHost ?? hosts.api,
+    fetchImpl,
+  });
   return {
     async createCall({ to, from, answerUrl }) {
-      const res = await fetch(`${base}/accounts/${cfg.accountId}/calls`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: auth },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${await tokens.getToken()}`,
+        },
         body: JSON.stringify({ to, from, answerUrl, applicationId: cfg.applicationId }),
       });
       if (!res.ok)
