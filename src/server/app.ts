@@ -59,13 +59,26 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     params: Record<string, string>,
     reply: FastifyReply,
   ) {
+    // Split the per-turn latency into the customer webhook round-trip (network,
+    // not ours) and the TwiML→BXML translation tax (CPU, ours). With ADAPTER_LOG=1
+    // each turn logs both; see `npm run bench` for the translation tax in isolation.
+    const fetchStart = performance.now();
     const twiml = await postToCustomer({
       url: customerUrl,
       params,
       authToken: config.authToken,
       fetchImpl: deps.fetchImpl,
     });
+    const translateStart = performance.now();
     const result = translateTwiml(twiml, { rewriteUrl: rewriter(customerUrl) });
+    app.log.info(
+      {
+        customerUrl,
+        fetchMs: Math.round((translateStart - fetchStart) * 1000) / 1000,
+        translateMs: Math.round((performance.now() - translateStart) * 1000) / 1000,
+      },
+      "fetchAndTranslate timing",
+    );
     if (result.hasErrors) {
       const verbs = [
         ...new Set(result.findings.filter((f) => f.severity === "error").map((f) => f.verb)),

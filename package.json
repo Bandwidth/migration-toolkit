@@ -8,7 +8,10 @@
     "typecheck": "tsc --noEmit",
     "start": "tsx src/server/index.ts",
     "preflight": "tsx src/preflight/cli.ts",
-    "generate": "tsx src/generate/cli.ts"
+    "generate": "tsx src/generate/cli.ts",
+    "bench": "tsx scripts/bench-translate.ts",
+    "bench:overhead": "tsx scripts/bench-adapter-overhead.ts",
+    "latency:report": "tsx scripts/latency-report.ts"
   },
   "dependencies": {
     "@fastify/formbody": "^8.0.2",
