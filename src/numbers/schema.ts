@@ -271,11 +271,13 @@ export type BwOrderRequest = z.infer<typeof BwOrderRequestSchema>;
 
 // ── Bandwidth: Order response ────────────────────────────────────────────────
 
-// UNVERIFIED SHAPE: the exact v2 JSON order-response envelope (flat vs. nested
-// under `order`, field casing) is not confirmed against a live order — this
-// credential lacks the Numbers role to place one. Kept lenient (.passthrough,
-// optional fields) so a real response is never rejected or has fields silently
-// dropped; tighten once validated against a live v2 JSON order.
+// UNVERIFIED — EXPERIMENTAL. Auth is OAuth2 Bearer (shared platform token,
+// verified live), but live testing (2026-06-19) never got as far as a response:
+// the v2 JSON order endpoint rejects the *request* body
+// ("Invalid data type for field 'existingTelephoneNumberOrderType'"), so both
+// BwOrderRequest and this response envelope are still guesses. Capture `band`'s
+// real request/response to pin the schema before relying on ordering. Kept
+// lenient (.passthrough, optional fields) so nothing is silently dropped.
 export const BwOrderResponseSchema = z
   .object({
     /** Bandwidth-assigned order UUID. */

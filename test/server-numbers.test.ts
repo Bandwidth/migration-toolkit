@@ -168,3 +168,62 @@ describe("POST IncomingPhoneNumbers (purchase facade)", () => {
     expect(res.json().code).toBe(21602);
   });
 });
+
+describe("DELETE IncomingPhoneNumbers (release facade)", () => {
+  async function buyNumber(app: ReturnType<typeof makeApp>["app"]) {
+    const res = await app.inject({
+      method: "POST",
+      url: "/2010-04-01/Accounts/AC123/IncomingPhoneNumbers.json",
+      headers: { authorization: auth },
+      payload: { PhoneNumber: "+19195551234" },
+    });
+    return res.json().sid as string;
+  }
+
+  it("releases a previously purchased number via disconnect", async () => {
+    const disconnect = vi.fn(async () => ({ id: "d-1", orderStatus: "RECEIVED" }));
+    const { app } = makeApp({
+      createOrder: vi.fn(async () => ({
+        id: "o-1",
+        orderStatus: "COMPLETE" as const,
+        telephoneNumbers: ["+19195551234"],
+      })),
+      getOrder: vi.fn(),
+      disconnect,
+    });
+    const sid = await buyNumber(app);
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/2010-04-01/Accounts/AC123/IncomingPhoneNumbers/${sid}.json`,
+      headers: { authorization: auth },
+    });
+
+    expect(res.statusCode).toBe(204);
+    expect(disconnect).toHaveBeenCalledWith(
+      expect.objectContaining({ phoneNumbers: ["+19195551234"] }),
+    );
+  });
+
+  it("404s for a SID this instance never provisioned", async () => {
+    const disconnect = vi.fn();
+    const { app } = makeApp({ disconnect });
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/2010-04-01/Accounts/AC123/IncomingPhoneNumbers/PNdeadbeef.json",
+      headers: { authorization: auth },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe(20404);
+    expect(disconnect).not.toHaveBeenCalled();
+  });
+
+  it("401s without auth", async () => {
+    const { app } = makeApp({ disconnect: vi.fn() });
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/2010-04-01/Accounts/AC123/IncomingPhoneNumbers/PNx.json",
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});

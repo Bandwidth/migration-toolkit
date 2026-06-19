@@ -31,7 +31,7 @@ Validated with **250 automated tests**, checked against Bandwidth's own tooling,
 - Real-time audio streaming to AI voice bots (start, stop, one-way fork, and two-way)
 - **Controlling calls from your backend** the way Twilio apps do — hang up or redirect a live call, look up its status, and list/download recordings — through a Twilio-shaped REST API
 - **Calling your app back** the way Twilio does — a call-completion status callback when a call ends, and a recording-ready callback when a `<Record>`'s audio is available — delivered in Twilio's shape with a valid `X-Twilio-Signature`
-- **Searching and buying phone numbers** through a Twilio-shaped REST API (search is live; placing a real order is pending the Bandwidth Numbers-role / OAuth2 credential)
+- **Searching for phone numbers** through a Twilio-shaped REST API over Bandwidth OAuth2 — verified live against real Bandwidth inventory. Buying and releasing numbers are scaffolded behind the same facade but **experimental / not yet verified** (see below)
 
 When a customer uses something the adapter *can't* do yet, it **says so clearly and stops** rather than breaking the call silently — the behavior that earns trust during a migration.
 
@@ -66,8 +66,9 @@ You'll get a migration-complexity score and a per-feature "works as-is / heads-u
 | `ADAPTER_ACCOUNT_SID` / `ADAPTER_AUTH_TOKEN` | What the customer's Twilio SDK + webhook-signature validation use |
 | `PUBLIC_BASE_URL` | Public HTTPS base of this adapter |
 | `CUSTOMER_VOICE_URL` | The customer's Twilio voice webhook (inbound calls) |
-| `BW_ACCOUNT_ID` / `BW_CLIENT_ID` / `BW_CLIENT_SECRET` / `BW_APPLICATION_ID` | Bandwidth Voice API credentials (OAuth2 client-credentials) |
-| `BW_NUMBERS_USERNAME` / `BW_NUMBERS_PASSWORD` / `BW_SITE_ID` | Optional — enable the number-lifecycle facade (`BW_PEER_ID` optional). Live ordering is pending the Numbers-role / OAuth2 reconciliation |
+| `BW_ACCOUNT_ID` / `BW_CLIENT_ID` / `BW_CLIENT_SECRET` / `BW_APPLICATION_ID` | Bandwidth credentials (OAuth2 client-credentials) — shared by the Voice API and the number-lifecycle facade |
+| `BW_SITE_ID` / `BW_PEER_ID` | Optional — enable number **ordering** (search/release use the shared `BW_CLIENT_*` creds). `BW_PEER_ID` is optional |
+| `BW_NUMBERS_BASE_URL` | Optional — override the Numbers API v2 base (tests/staging) |
 | `BW_ENVIRONMENT` | Optional — `test` targets BW's test hosts; defaults to `prod` |
 | `ADAPTER_LOG=1` | Optional — enable request logging |
 
@@ -90,8 +91,9 @@ Point your Bandwidth Voice application's callback at `$PUBLIC_BASE_URL/bw/initia
 | `GET /Recordings/{sid}.json` | `recordings(sid).fetch()` | recording metadata |
 | `GET /Recordings/{sid}.{mp3,wav}` | recording media URL | audio, stream-proxied from Bandwidth |
 | `POST /Calls/{sid}/Recordings/{recSid}.json` | `recordings(sid).update({status})` | pause (`paused`) / resume (`in-progress`); `stopped` fails loudly (no BW REST stop) |
-| `GET /AvailablePhoneNumbers/{Country}/Local.json` | `availablePhoneNumbers(c).local.list()` | search Bandwidth number inventory |
-| `POST /IncomingPhoneNumbers.json` | `incomingPhoneNumbers.create()` | order a number (Bandwidth order + status poll) |
+| `GET /AvailablePhoneNumbers/{Country}/Local.json` | `availablePhoneNumbers(c).local.list()` | search Bandwidth inventory — **verified live** |
+| `POST /IncomingPhoneNumbers.json` | `incomingPhoneNumbers.create()` | order a number — ⚠️ **experimental, not verified** |
+| `DELETE /IncomingPhoneNumbers/{sid}.json` | `incomingPhoneNumbers(sid).remove()` | release a number — ⚠️ **experimental, not verified** |
 
 Unknown calls/recordings return Twilio's `20404` body; bad credentials return its `20003`. Call/recording state is in-memory (single-instance); a recording must be listed before it can be fetched by SID on a fresh instance.
 
@@ -100,6 +102,10 @@ Unknown calls/recordings return Twilio's `20404` body; bad credentials return it
 - **Status callback** — when a call ends, the `StatusCallback` URL set on `calls.create()` receives a Twilio-shaped `completed` callback (`CallSid`, `CallStatus`, `CallDuration`), mapped from Bandwidth's disconnect event.
 - **Recording callback** — a `<Record recordingStatusCallback="…">` maps to Bandwidth's `recordingAvailableUrl`; when the recording is ready the adapter forwards a Twilio `recordingStatusCallback` (`RecordingSid`, `RecordingStatus`, `RecordingDuration`), with `RecordingUrl` pointing back at this facade so a later fetch resolves through the adapter.
 
-The number-lifecycle facade is opt-in (set `BW_NUMBERS_*` / `BW_SITE_ID`); search is live, while placing a real order is gated on the Numbers-role / OAuth2 credential reconciliation noted in `src/numbers/client.ts` (the client is currently wired for placeholder Basic auth).
+The number-lifecycle facade shares the platform OAuth2 client-credentials with the Voice API (one token; the account's roles decide what it can do). **Status of each operation, from live testing (2026-06-19):**
+
+- **Search** — ✅ verified live. OAuth2 token exchange and `GET /accounts/{id}/availableNumbers` both confirmed against real Bandwidth.
+- **Order** (`POST /IncomingPhoneNumbers.json`) — ⚠️ experimental. The v2 JSON order endpoint rejects the current request body; the real order schema still needs to be captured (e.g. from the `band` CLI) before this works. Needs `BW_SITE_ID`.
+- **Release** (`DELETE`) — ⚠️ experimental. The real disconnect endpoint returns XML, not JSON; the client needs an XML path. Number state is in-memory, so a number can only be released by SID on the instance that provisioned it.
 
 **How it's built:** all translation is driven by one declarative compatibility matrix (`src/matrix/twilio-voice.json`) — the runtime adapter and the pre-flight report read the same data, so they can't disagree. Layout: `src/translator` (TwiML→BXML), `src/twilio` (Twilio-shaped REST facade + signed webhooks), `src/streams` (Media Streams bridge), `src/numbers` (number-lifecycle facade), `src/server` (the proxy).

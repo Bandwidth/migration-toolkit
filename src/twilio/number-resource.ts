@@ -122,6 +122,15 @@ export const numberErrors = {
     more_info: "https://www.twilio.com/docs/errors/21602",
     status: 400,
   },
+  /** 404 for an unknown IncomingPhoneNumber SID (path mirrors live Twilio). */
+  notFound(accountSid: string, sid: string) {
+    return {
+      code: 20404,
+      message: `The requested resource /2010-04-01/Accounts/${accountSid}/IncomingPhoneNumbers/${sid}.json was not found`,
+      more_info: "https://www.twilio.com/docs/errors/20404",
+      status: 404,
+    };
+  },
   /** The Bandwidth order came back FAILED. */
   orderFailed(detail: string) {
     return {

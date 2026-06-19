@@ -12,22 +12,20 @@ function optEnv(name: string): string | undefined {
   return process.env[name] || undefined;
 }
 
-// The number-lifecycle facade is opt-in: only wired when Numbers credentials and
-// a Bandwidth site are configured. Note (per src/numbers/client.ts): the v2 JSON
-// order endpoints expect OAuth2 Bearer auth and a Numbers-role credential — the
-// Basic-auth wiring here is a placeholder and live ordering is not yet verified.
-const numbersUser = optEnv("BW_NUMBERS_USERNAME");
-const numbersPass = optEnv("BW_NUMBERS_PASSWORD");
+// The number-lifecycle facade shares the platform OAuth2 client-credentials with
+// the Voice API (one token, account roles decide what it can do). Search/release
+// work whenever the credential carries the Numbers role; ordering additionally
+// needs a site (BW_SITE_ID), enforced by the route.
+const bwEnv = process.env.BW_ENVIRONMENT === "test" ? "test" : "prod";
+const numbersApiHost = bwEnv === "test" ? "https://test.api.bandwidth.com" : "https://api.bandwidth.com";
 const siteId = optEnv("BW_SITE_ID");
-const numbersClient =
-  numbersUser && numbersPass
-    ? createNumbersClient({
-        accountId: env("BW_ACCOUNT_ID"),
-        username: numbersUser,
-        password: numbersPass,
-        baseUrl: optEnv("BW_NUMBERS_BASE_URL"),
-      })
-    : undefined;
+const numbersClient = createNumbersClient({
+  accountId: env("BW_ACCOUNT_ID"),
+  clientId: env("BW_CLIENT_ID"),
+  clientSecret: env("BW_CLIENT_SECRET"),
+  apiHost: numbersApiHost,
+  baseUrl: optEnv("BW_NUMBERS_BASE_URL") ?? `${numbersApiHost}/api/v2`,
+});
 
 const app = buildApp(
   {
@@ -44,7 +42,7 @@ const app = buildApp(
       clientId: env("BW_CLIENT_ID"),
       clientSecret: env("BW_CLIENT_SECRET"),
       applicationId: env("BW_APPLICATION_ID"),
-      environment: process.env.BW_ENVIRONMENT === "test" ? "test" : "prod",
+      environment: bwEnv,
     }),
     numbersClient,
   },

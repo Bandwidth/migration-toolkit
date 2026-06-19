@@ -22,6 +22,7 @@
  */
 
 import type { BwSearchParams, BwOrderRequest, BwOrderResponse } from "./schema.js";
+import { TokenManager } from "../bw/token.js";
 
 // ── Available-number search result ───────────────────────────────────────────
 
@@ -120,43 +121,50 @@ export interface NumbersClient {
 export interface NumbersClientConfig {
   /** Bandwidth account ID. */
   accountId: string;
-  /** HTTP Basic auth username. */
-  username: string;
-  /** HTTP Basic auth password. */
-  password: string;
+  /** OAuth2 client-credentials ID (same platform credential as the Voice API). */
+  clientId: string;
+  /** OAuth2 client-credentials secret. */
+  clientSecret: string;
   /**
-   * Base URL for the Numbers API.
+   * Base URL for the Numbers API v2 JSON endpoints.
    * Defaults to the production Bandwidth Numbers API.
    * Override in tests to point at a mock server.
    */
   baseUrl?: string;
+  /** API host serving the OAuth2 token endpoint. Defaults to https://api.bandwidth.com. */
+  apiHost?: string;
+  /** Injectable fetch for tests/staging. */
+  fetchImpl?: typeof fetch;
 }
 
 /**
  * Create a real NumbersClient backed by the Bandwidth Numbers API.
  *
- * This mirrors createBwClient in src/bw/client.ts. It makes real HTTP calls
- * but is NOT wired to live credentials by default — pass a mock baseUrl in
- * tests or integration environments.
+ * Auth mirrors createBwClient (src/bw/client.ts): a shared OAuth2
+ * client-credentials Bearer token via TokenManager. The same platform token
+ * is honored across Voice and Numbers — whether it can place orders depends on
+ * the account credential carrying the Numbers role.
  *
- * Note: The legacy Numbers API uses Basic auth over HTTPS and returns either
- * JSON (new endpoints) or XML (legacy v2 endpoints). This implementation
- * targets the JSON-native endpoints documented at:
+ * Targets the JSON-native endpoints documented at:
  *   https://dev.bandwidth.com/apis/numbers-apis/numbers
  *   https://dev.bandwidth.com/apis/numbers-apis/number-acquisition
  */
 export function createNumbersClient(cfg: NumbersClientConfig): NumbersClient {
   // Bandwidth's Numbers API lives under api.bandwidth.com (not numbers.bandwidth.com).
   const base = cfg.baseUrl ?? "https://api.bandwidth.com/api/v2";
-  // NOTE (auth, unresolved — same open question as the voice side's createBwClient):
-  // the v2 JSON endpoints expect OAuth2 Bearer tokens; only the legacy IRIS/XML
-  // endpoints use Basic auth. This Basic wiring is a placeholder until the platform
-  // OAuth2 reconciliation lands. Not production-ready.
-  const auth =
-    "Basic " + Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
+  const fetchImpl = cfg.fetchImpl ?? fetch;
+  const tokens = new TokenManager({
+    clientId: cfg.clientId,
+    clientSecret: cfg.clientSecret,
+    apiHost: cfg.apiHost ?? "https://api.bandwidth.com",
+    fetchImpl,
+  });
 
-  function headers(): Record<string, string> {
-    return { "Content-Type": "application/json", Authorization: auth };
+  async function headers(): Promise<Record<string, string>> {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${await tokens.getToken()}`,
+    };
   }
 
   async function expectOk(res: Response, context: string): Promise<Response> {
@@ -174,33 +182,33 @@ export function createNumbersClient(cfg: NumbersClientConfig): NumbersClient {
       for (const [k, v] of Object.entries(params)) {
         if (v !== undefined) qs.set(k, String(v));
       }
-      const res = await fetch(`${base}/numbers?${qs.toString()}`, {
-        headers: headers(),
-      });
+      // Verified live (2026-06-19): GET /accounts/{id}/availableNumbers returns
+      // {"phoneNumbers":["+1919…"],"resultCount":N} as JSON. Without
+      // enableTNDetail the response is just E.164 strings (no city/state/rateCenter).
+      const res = await fetchImpl(
+        `${base}/accounts/${cfg.accountId}/availableNumbers?${qs.toString()}`,
+        { headers: { ...(await headers()), Accept: "application/json" } },
+      );
       await expectOk(res, "searchAvailable");
       const json = (await res.json()) as {
-        numbers?: Array<{
-          fullNumber?: string;
-          rateCenter?: string;
-          city?: string;
-          state?: string;
-          LCA?: boolean;
-        }>;
+        phoneNumbers?: string[];
+        TelephoneNumberList?: string[];
+        resultCount?: number;
+        ResultCount?: number;
       };
-      const numbers: AvailableNumber[] = (json.numbers ?? []).map((n) => ({
-        fullNumber: n.fullNumber ?? "",
-        rateCenter: n.rateCenter,
-        city: n.city,
-        state: n.state,
-        lca: n.LCA,
+      // Prefer phoneNumbers (E.164); TelephoneNumberList carries the same set
+      // without the leading "+".
+      const raw = json.phoneNumbers ?? json.TelephoneNumberList ?? [];
+      const numbers: AvailableNumber[] = raw.map((fullNumber) => ({
+        fullNumber: fullNumber.startsWith("+") ? fullNumber : `+${fullNumber}`,
       }));
-      return { numbers, resultCount: numbers.length };
+      return { numbers, resultCount: json.resultCount ?? json.ResultCount ?? numbers.length };
     },
 
     async createOrder(req) {
-      const res = await fetch(`${base}/accounts/${cfg.accountId}/orders`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/orders`, {
         method: "POST",
-        headers: headers(),
+        headers: await headers(),
         body: JSON.stringify(req),
       });
       await expectOk(res, "createOrder");
@@ -208,10 +216,9 @@ export function createNumbersClient(cfg: NumbersClientConfig): NumbersClient {
     },
 
     async getOrder(orderId) {
-      const res = await fetch(
-        `${base}/accounts/${cfg.accountId}/orders/${orderId}`,
-        { headers: headers() },
-      );
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/orders/${orderId}`, {
+        headers: await headers(),
+      });
       await expectOk(res, "getOrder");
       return (await res.json()) as BwOrderResponse;
     },
@@ -220,10 +227,9 @@ export function createNumbersClient(cfg: NumbersClientConfig): NumbersClient {
       const qs = new URLSearchParams();
       if (opts.quantity !== undefined) qs.set("quantity", String(opts.quantity));
       if (opts.page !== undefined) qs.set("page", String(opts.page));
-      const res = await fetch(
-        `${base}/accounts/${cfg.accountId}/tns?${qs.toString()}`,
-        { headers: headers() },
-      );
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/tns?${qs.toString()}`, {
+        headers: await headers(),
+      });
       await expectOk(res, "listTns");
       const json = (await res.json()) as {
         telephoneNumbers?: TelephoneNumber[];
@@ -243,9 +249,9 @@ export function createNumbersClient(cfg: NumbersClientConfig): NumbersClient {
           phoneNumbers: req.phoneNumbers,
         },
       };
-      const res = await fetch(`${base}/accounts/${cfg.accountId}/disconnects`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/disconnects`, {
         method: "POST",
-        headers: headers(),
+        headers: await headers(),
         body: JSON.stringify(body),
       });
       await expectOk(res, "disconnect");

@@ -110,17 +110,29 @@ adapter fires a signed Twilio `completed` callback (`CallStatus=completed`,
 `CallDuration`, `CallSid`) to that URL. No-telephony proof:
 `npx vitest run test/server-status-callback.test.ts`.
 
-### 4c. Number search & order
+### 4c. Number search (verified live); order & release (experimental)
 
-Enable the facade by setting `BW_NUMBERS_USERNAME` / `BW_NUMBERS_PASSWORD` /
-`BW_SITE_ID`. Search is a read and safe to run live; ordering is gated (see
-above). The deterministic, no-auth demonstration of both is the test suite,
-which runs the real translation + response-shaping against a mock Bandwidth:
+The facade uses the same `BW_CLIENT_ID` / `BW_CLIENT_SECRET` OAuth2 credentials
+as the Voice API.
+
+**Search is verified against real Bandwidth.** A live read-only check (OAuth2
+token exchange + `availableNumbers`) is in `scripts/verify-numbers-live.ts`:
 
 ```bash
-npx vitest run test/server-numbers.test.ts
+set -a; . ./.env; set +a
+BW_ACCOUNT_ID=<acct> npx tsx scripts/verify-numbers-live.ts   # token + live search
 ```
 
-It exercises `AreaCode=919 → BW areaCode/quantity` translation, the Twilio
-`available_phone_numbers` JSON, and the full purchase → order → `IncomingPhoneNumber`
-resource (including order polling and the FAILED path).
+**Order and release are experimental and NOT verified live** (2026-06-19): the
+v2 JSON order endpoint rejects the current request body, and the disconnect
+endpoint returns XML rather than JSON. Don't demo these as working — the real
+order schema must be captured (e.g. from the `band` CLI) and an XML disconnect
+path added first. The same script can attempt a real order + immediate release
+with `VERIFY_ORDER=1` once a site is set, but it currently fails at the order step.
+
+Unit coverage (no creds) exercises the translation + response-shaping logic:
+
+```bash
+npx vitest run test/server-numbers.test.ts   # search, order, release (mocked BW)
+npx vitest run test/numbers-client.test.ts   # OAuth2 token exchange + Bearer + caching + live search shape
+```

@@ -129,7 +129,9 @@ describe("translatePurchaseToOrder: Twilio purchase → BW order", () => {
     );
     expect(result.bwOrder.name).toBe("Test Order");
     expect(result.bwOrder.siteId).toBe("1111");
-    expect(result.bwOrder.quantity).toBe(1);
+    // No top-level quantity: the live v2 JSON order endpoint rejects it
+    // ("Invalid data type for field 'quantity'", verified 2026-06-19).
+    expect(result.bwOrder.quantity).toBeUndefined();
   });
 
   it("maps areaCode purchase to areaCodeSearchAndOrderType", () => {

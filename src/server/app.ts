@@ -9,7 +9,7 @@ import {
   recordingStatusParams,
   postToCustomer,
 } from "../twilio/egress.js";
-import { toCallSid, toRecordingSid } from "../twilio/call-sid.js";
+import { toCallSid, toRecordingSid, toIncomingPhoneNumberSid } from "../twilio/call-sid.js";
 import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
 import {
   recordingList,
@@ -470,6 +470,14 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
 
   // ── Number lifecycle: purchase ───────────────────────────────────────────
   // POST /2010-04-01/Accounts/:sid/IncomingPhoneNumbers.json
+  //
+  // ⚠️ EXPERIMENTAL — NOT VERIFIED AGAINST LIVE BANDWIDTH.
+  // Live testing (2026-06-19) showed the v2 JSON order endpoint rejects this
+  // body: 400 "Invalid data type for field 'existingTelephoneNumberOrderType'".
+  // The real v2 order schema differs from both this code and the public docs
+  // snippet; it must be confirmed (capture `band`'s request body) before this is
+  // trustworthy. Auth + search ARE verified live; ordering is not.
+  //
   // Acquires a number. Bandwidth orders are async (RECEIVED→COMPLETE); we poll
   // a bounded number of times. Webhook/config fields on the Twilio request have
   // no order-time equivalent in Bandwidth and surface as logged gaps — they must
@@ -522,6 +530,8 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
         order_status: order.orderStatus,
       });
     }
+    // Remember SID → number so a later DELETE (release) can resolve it.
+    store.putNumber(toIncomingPhoneNumberSid(acquired), acquired);
     return reply.code(201).send(
       incomingPhoneNumberResource({
         phoneNumber: acquired,
@@ -533,6 +543,36 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
       }),
     );
   });
+
+  // ── Number lifecycle: release ────────────────────────────────────────────
+  // DELETE /2010-04-01/Accounts/:sid/IncomingPhoneNumbers/:numberSid.json
+  //
+  // ⚠️ EXPERIMENTAL — NOT VERIFIED AGAINST LIVE BANDWIDTH.
+  // Live testing (2026-06-19) showed the real disconnect endpoint returns XML,
+  // not JSON, so the JSON-based client.disconnect() cannot parse it. Needs an
+  // XML request/response path before this is trustworthy.
+  //
+  // Twilio releases by SID; we resolve the SID to its E.164 (persisted at
+  // purchase) and disconnect it on Bandwidth. State is in-memory, so only
+  // numbers acquired by this instance can be released by SID.
+  app.delete(
+    "/2010-04-01/Accounts/:accountSid/IncomingPhoneNumbers/:numberSid.json",
+    async (req, reply) => {
+      if (!authOk(req)) return reply.code(401).send(twilioErrors.auth401);
+      if (!deps.numbersClient) return reply.code(400).send(numberErrors.notConfigured);
+      const { numberSid } = req.params as { numberSid: string };
+      const phoneNumber = store.getNumber(numberSid);
+      if (!phoneNumber) {
+        return reply.code(404).send(numberErrors.notFound(config.accountSid, numberSid));
+      }
+      await deps.numbersClient.disconnect({
+        phoneNumbers: [phoneNumber],
+        customerOrderId: numberSid,
+      });
+      // Twilio returns 204 No Content on a successful release.
+      return reply.code(204).send();
+    },
+  );
 
   return app;
 }
