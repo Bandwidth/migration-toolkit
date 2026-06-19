@@ -6,6 +6,10 @@ export interface CallRecord {
   to: string;
   direction: "inbound" | "outbound-api";
   voiceUrl: string;
+  /** Customer URL to POST a Twilio-shaped status callback to when the call ends. */
+  statusCallback?: string;
+  /** HTTP method the customer requested for the status callback (default POST). */
+  statusCallbackMethod?: string;
 }
 
 /** Resolves a Twilio recording SID back to the BW call + recording it maps to. */

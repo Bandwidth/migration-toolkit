@@ -73,6 +73,7 @@
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/record",
       "attributes": {
         "action": { "bxml": "recordCompleteUrl", "status": "supported" },
+        "recordingStatusCallback": { "bxml": "recordingAvailableUrl", "status": "supported", "notes": "Async 'recording ready' webhook. Adapter receives the BW recordingAvailableUrl event, reshapes it into Twilio recordingStatusCallback params, and forwards it; RecordingUrl points back at the adapter's recording facade. recordingStatusCallbackMethod=GET is not honored (forwarded via POST)." },
         "maxLength": { "bxml": "maxDuration", "status": "supported" },
         "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
         "transcribe": { "bxml": "transcribe", "status": "partial", "notes": "Engine and callback shape differ." },
