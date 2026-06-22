@@ -76,6 +76,37 @@ export function statusParams(
   };
 }
 
+/**
+ * Twilio recording status callback params. This is a leaner payload than the
+ * voice webhooks (no geo block) — it carries the recording identity plus the
+ * call it belongs to. RecordingUrl points back at the adapter's own recording
+ * facade so the customer's existing fetch-by-URL code resolves through us.
+ */
+export function recordingStatusParams(
+  call: CallRecord,
+  accountSid: string,
+  rec: {
+    recordingSid: string;
+    recordingUrl: string;
+    durationSec: number;
+    channels?: number;
+    status?: string;
+    startTime?: string;
+  },
+): Record<string, string> {
+  return {
+    AccountSid: accountSid,
+    CallSid: call.sid,
+    RecordingSid: rec.recordingSid,
+    RecordingUrl: rec.recordingUrl,
+    RecordingStatus: rec.status ?? "completed",
+    RecordingDuration: String(rec.durationSec),
+    RecordingChannels: String(rec.channels ?? 1),
+    RecordingSource: "RecordVerb",
+    ...(rec.startTime ? { RecordingStartTime: rec.startTime } : {}),
+  };
+}
+
 export async function postToCustomer(opts: {
   url: string;
   params: Record<string, string>;

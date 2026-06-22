@@ -3,7 +3,7 @@ import { bxmlDocument, type XmlEl } from "../xml/build-xml.js";
 import { loadMatrix, type CompatMatrix } from "../matrix/load.js";
 
 export type Severity = "info" | "warning" | "error";
-export type UrlKind = "action" | "redirect" | "record" | "transfer" | "stream";
+export type UrlKind = "action" | "redirect" | "record" | "transfer" | "stream" | "recordingStatus";
 
 export interface Finding {
   severity: Severity;
@@ -314,6 +314,20 @@ function translateRecord(
     terminatingDigits: node.attrs.finishOnKey,
   };
   if (node.attrs.action) attrs.recordCompleteUrl = rewrite(node.attrs.action, "record");
+  // Twilio's async "recording is ready" webhook (recordingStatusCallback) maps to
+  // Bandwidth's recordingAvailableUrl. The adapter receives the BW event, reshapes
+  // it into Twilio recording-callback params, and forwards it to the customer.
+  if (node.attrs.recordingStatusCallback)
+    attrs.recordingAvailableUrl = rewrite(node.attrs.recordingStatusCallback, "recordingStatus");
+  if (
+    node.attrs.recordingStatusCallbackMethod &&
+    node.attrs.recordingStatusCallbackMethod.toUpperCase() === "GET"
+  )
+    warn(
+      "Record",
+      "recordingStatusCallbackMethod=GET is not honored; the adapter forwards recording events via POST.",
+      findings,
+    );
   if (node.attrs.transcribe === "true")
     warn(
       "Record",

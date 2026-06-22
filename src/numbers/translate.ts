@@ -226,11 +226,13 @@ export function translatePurchaseToOrder(
   const gaps: GapItem[] = [];
   const orderName = ctx.orderName ?? "Migrated from Twilio";
 
+  // No top-level `quantity`: the Bandwidth v2 JSON order API rejects it
+  // ("Invalid data type for field 'quantity'", verified live 2026-06-19).
+  // Quantity is implicit in the TN list, or nested inside areaCodeSearchAndOrderType.
   const bwOrder: BwOrderRequest = {
     name: orderName,
     siteId: ctx.siteId,
     ...(ctx.peerId ? { peerId: ctx.peerId } : {}),
-    quantity: 1,
   };
 
   // Route to the correct BW order type based on whether we have a specific

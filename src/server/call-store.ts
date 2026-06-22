@@ -6,6 +6,10 @@ export interface CallRecord {
   to: string;
   direction: "inbound" | "outbound-api";
   voiceUrl: string;
+  /** Customer URL to POST a Twilio-shaped status callback to when the call ends. */
+  statusCallback?: string;
+  /** HTTP method the customer requested for the status callback (default POST). */
+  statusCallbackMethod?: string;
 }
 
 /** Resolves a Twilio recording SID back to the BW call + recording it maps to. */
@@ -18,6 +22,8 @@ export class CallStore {
   private byBwId = new Map<string, CallRecord>();
   private bySid = new Map<string, CallRecord>();
   private recordingsBySid = new Map<string, RecordingRef>();
+  /** Resolves a Twilio IncomingPhoneNumber SID back to the E.164 it provisioned. */
+  private numbersBySid = new Map<string, string>();
   put(bwCallId: string, record: CallRecord): void {
     this.byBwId.set(bwCallId, record);
     this.bySid.set(record.sid, record);
@@ -33,5 +39,11 @@ export class CallStore {
   }
   getRecording(recordingSid: string): RecordingRef | undefined {
     return this.recordingsBySid.get(recordingSid);
+  }
+  putNumber(sid: string, phoneNumber: string): void {
+    this.numbersBySid.set(sid, phoneNumber);
+  }
+  getNumber(sid: string): string | undefined {
+    return this.numbersBySid.get(sid);
   }
 }

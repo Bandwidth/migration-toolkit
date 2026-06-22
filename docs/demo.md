@@ -60,3 +60,79 @@ P0 exit criteria for the live milestone:
 2. Round-trip audio latency through the Media Streams bridge measured vs
    native StartStream (the AI-voice segment is latency-sensitive — this number
    decides whether the compat mode is demo-grade or product-grade).
+
+## 4. Callbacks & number lifecycle
+
+These layer on top of the loop above. The webhook callbacks can be shown with
+no credentials; live number ordering is gated on the Numbers-role / OAuth2
+credential (see `src/numbers/client.ts`).
+
+Add a stand-in for the customer's callback receiver:
+
+```bash
+# Terminal D — prints whatever the adapter posts back
+node -e "require('http').createServer((q,s)=>{let b='';q.on('data',d=>b+=d);q.on('end',()=>{console.log('\n['+q.url+'] '+b);s.end('ok')})}).listen(4001,()=>console.log('catcher :4001'))"
+```
+
+### 4a. Recording callback (no credentials needed)
+
+Seed a call record via `initiate` (Terminal A from §2 makes it return 200), then
+fire Bandwidth's "recording available" event:
+
+```bash
+curl -s -X POST http://localhost:3000/bw/initiate -H 'Content-Type: application/json' \
+  -d '{"eventType":"initiate","callId":"demo-1","from":"+15550001111","to":"+15552223333","direction":"inbound"}' >/dev/null
+
+curl -s -X POST 'http://localhost:3000/bw/recording-status?cb=http%3A%2F%2Flocalhost%3A4001%2Frec-ready' \
+  -H 'Content-Type: application/json' \
+  -d '{"eventType":"recordingAvailable","callId":"demo-1","recordingId":"r-abc","duration":"PT12S","status":"complete"}'
+```
+
+Expected (Terminal D): a Twilio `recordingStatusCallback` payload —
+`RecordingSid=RE…`, `RecordingStatus=completed`, `RecordingDuration=12`,
+`CallSid=CA…`, and `RecordingUrl=http://localhost:3000/2010-04-01/Accounts/AC123/Recordings/RE…`
+(pointing back at this facade), with an `X-Twilio-Signature` header.
+
+### 4b. Status callback (live call)
+
+The `StatusCallback` URL is captured on the outbound `calls.create` path, so this
+is shown on a live call rather than locally. Point the `twilio` SDK at the adapter:
+
+```js
+client.calls.create({
+  to: '+1…', from: '+1…', url: 'https://your-app/voice',
+  statusCallback: 'https://your-catcher/status',   // ← the new bit
+});
+```
+
+Hang up the call; when Bandwidth posts the disconnect to `/bw/disconnect`, the
+adapter fires a signed Twilio `completed` callback (`CallStatus=completed`,
+`CallDuration`, `CallSid`) to that URL. No-telephony proof:
+`npx vitest run test/server-status-callback.test.ts`.
+
+### 4c. Number search (verified live); order & release (experimental)
+
+The facade uses the same `BW_CLIENT_ID` / `BW_CLIENT_SECRET` OAuth2 credentials
+as the Voice API.
+
+**Search is verified against real Bandwidth.** A live read-only check (OAuth2
+token exchange + `availableNumbers`) is in `scripts/verify-numbers-live.ts`:
+
+```bash
+set -a; . ./.env; set +a
+BW_ACCOUNT_ID=<acct> npx tsx scripts/verify-numbers-live.ts   # token + live search
+```
+
+**Order and release are experimental and NOT verified live** (2026-06-19): the
+v2 JSON order endpoint rejects the current request body, and the disconnect
+endpoint returns XML rather than JSON. Don't demo these as working — the real
+order schema must be captured (e.g. from the `band` CLI) and an XML disconnect
+path added first. The same script can attempt a real order + immediate release
+with `VERIFY_ORDER=1` once a site is set, but it currently fails at the order step.
+
+Unit coverage (no creds) exercises the translation + response-shaping logic:
+
+```bash
+npx vitest run test/server-numbers.test.ts   # search, order, release (mocked BW)
+npx vitest run test/numbers-client.test.ts   # OAuth2 token exchange + Bearer + caching + live search shape
+```
