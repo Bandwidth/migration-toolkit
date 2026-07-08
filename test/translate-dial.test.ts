@@ -30,6 +30,26 @@ describe("Dial", () => {
     const r = translateTwiml(`<Response><Dial><Queue>q1</Queue></Dial></Response>`);
     expect(r.hasErrors).toBe(true);
   });
+
+  it("warns on silently-dropped Dial attributes (timeLimit, hangupOnStar, ringTone, answerOnBridge)", () => {
+    const r = translateTwiml(
+      `<Response><Dial timeLimit="3600" hangupOnStar="true" ringTone="us" answerOnBridge="true">+15552223333</Dial></Response>`,
+    );
+    for (const attr of ["timeLimit", "hangupOnStar", "ringTone", "answerOnBridge"]) {
+      expect(
+        r.findings.some(
+          (f) => f.verb === "Dial" && f.severity === "warning" && f.message.includes(attr),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("does not warn about a Dial attribute that is not present", () => {
+    const r = translateTwiml(`<Response><Dial>+15552223333</Dial></Response>`);
+    expect(r.findings.some((f) => f.verb === "Dial" && f.message.includes("hangupOnStar"))).toBe(
+      false,
+    );
+  });
 });
 
 describe("Connect/Stream", () => {

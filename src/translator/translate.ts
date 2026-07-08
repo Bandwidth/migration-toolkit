@@ -193,6 +193,29 @@ function warn(verb: string, message: string, findings: Finding[]): void {
   findings.push({ severity: "warning", verb, message, docsUrl: matrix.verbs[verb]?.docsUrl });
 }
 
+/**
+ * Twilio's loop="N" repeats a <Say>/<Play>. BXML has no loop attribute, so a
+ * finite count is expanded into the verb repeated N times. loop="0" means
+ * "repeat until hangup" on Twilio and an invalid count has no meaning — neither
+ * can be expressed inline in BXML, so both fall back to a single emission plus a
+ * warning rather than silently dropping the intent.
+ */
+function applyLoop(els: XmlEl[], loop: string | undefined, verb: string, findings: Finding[]): XmlEl[] {
+  if (loop === undefined || loop === "1") return els;
+  if (loop === "0") {
+    warn(verb, 'loop="0" requests infinite repetition, which BXML cannot express inline; content will play once.', findings);
+    return els;
+  }
+  const n = Number(loop);
+  if (!Number.isInteger(n) || n < 1) {
+    warn(verb, `loop="${loop}" is not a valid repeat count; content will play once.`, findings);
+    return els;
+  }
+  const out: XmlEl[] = [];
+  for (let i = 0; i < n; i++) out.push(...els);
+  return out;
+}
+
 function translateVerb(
   node: TwimlNode,
   findings: Finding[],
@@ -215,21 +238,20 @@ function translateVerb(
           );
         }
       }
-      if (node.attrs.loop && node.attrs.loop !== "1")
-        warn("Say", "loop attribute is not supported by BXML; content will play once.", findings);
       // Use inner (SSML preserved as raw markup) rather than flattened text.
-      return [{ name: "SpeakSentence", attrs, children: [{ raw: node.inner }] }];
+      const say: XmlEl = { name: "SpeakSentence", attrs, children: [{ raw: node.inner }] };
+      return applyLoop([say], node.attrs.loop, "Say", findings);
     }
     case "Play": {
-      if (node.attrs.loop && node.attrs.loop !== "1")
-        warn("Play", "loop attribute is not supported by BXML; audio will play once.", findings);
       const result: XmlEl[] = [];
       // If there's a src URL, emit PlayAudio first
       if (node.text) result.push({ name: "PlayAudio", children: [node.text] });
       // If there are digits, emit SendDtmf (after any audio)
       if (node.attrs.digits) result.push({ name: "SendDtmf", children: [node.attrs.digits] });
       // Play with neither src nor digits is a no-op — emit nothing (malformed TwiML)
-      return result.length > 0 ? result : null;
+      if (result.length === 0) return null;
+      // loop="N" repeats the whole element (audio + any DTMF) N times.
+      return applyLoop(result, node.attrs.loop, "Play", findings);
     }
     case "Pause":
       return [{ name: "Pause", attrs: { duration: node.attrs.length ?? "1" } }];
@@ -339,6 +361,20 @@ function translateRecord(
   return [{ name: "Record", attrs }];
 }
 
+// Twilio <Dial> attributes with no BXML <Transfer> equivalent. Each present
+// attribute produces an explicit warning so the migration report flags it
+// instead of the behavior silently disappearing.
+const UNSUPPORTED_DIAL_ATTRS: Record<string, string> = {
+  timeLimit:
+    "Dial timeLimit (maximum call duration) has no BXML Transfer equivalent; the transferred leg will not be automatically terminated.",
+  hangupOnStar:
+    "Dial hangupOnStar has no BXML equivalent; the caller pressing * will not end the transferred call.",
+  ringTone:
+    "Dial ringTone has no BXML equivalent; Bandwidth uses its own default ringback tone.",
+  answerOnBridge:
+    "Dial answerOnBridge is not replicated; Bandwidth answers the inbound leg before bridging, so early-media/ringback behavior may differ.",
+};
+
 function translateDial(
   node: TwimlNode,
   findings: Finding[],
@@ -385,9 +421,15 @@ function translateDial(
 
   warn(
     "Dial",
-    "Deep Dial semantics (answerOnBridge, child-call status propagation) are not replicated in P0; validate call-progress behavior.",
+    "Child-call status propagation is not fully replicated in P0; validate call-progress behavior.",
     findings,
   );
+  // Twilio Dial attributes the adapter cannot map to BXML Transfer. Surfacing
+  // each one explicitly (rather than dropping it silently) is the product's
+  // no-silent-degradation contract — the customer learns exactly what won't carry over.
+  for (const [attr, message] of Object.entries(UNSUPPORTED_DIAL_ATTRS)) {
+    if (node.attrs[attr] !== undefined) warn("Dial", message, findings);
+  }
   const attrs: Record<string, string | undefined> = {
     transferCallerId: node.attrs.callerId,
     callTimeout: node.attrs.timeout,

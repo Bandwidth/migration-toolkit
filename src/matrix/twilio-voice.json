@@ -10,7 +10,7 @@
       "attributes": {
         "voice": { "bxml": "voice", "status": "partial", "notes": "Common Twilio/Polly voice names are mapped to the nearest BW equivalent; see TWILIO_TO_BW_VOICE in translate.ts. BW supports 50+ named voices across multiple locales — the full allowlist is in BW_VOICES." },
         "language": { "bxml": "locale", "status": "partial", "notes": "Locale formats differ." },
-        "loop": { "bxml": null, "status": "partial", "notes": "Emitted once; BXML has no loop attribute." }
+        "loop": { "bxml": null, "status": "partial", "notes": "BXML has no loop attribute, so a finite loop=\"N\" is expanded into the SpeakSentence repeated N times. loop=\"0\" (infinite) and invalid counts cannot be expressed inline, so they emit once and warn." }
       }
     },
     "Play": {
@@ -19,7 +19,7 @@
       "notes": "When a src URL is present it maps to PlayAudio. When the digits attribute is present it maps to SendDtmf (BW verb that sends DTMF tones mid-call). Both can appear in the same element: PlayAudio is emitted first, then SendDtmf. Twilio pause characters w (0.5 s), W (1 s), and comma (0.5 s) are passed through to BW SendDtmf unchanged — BW supports the same pause encoding.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/playAudio",
       "attributes": {
-        "loop": { "bxml": null, "status": "partial", "notes": "Emitted once; BXML has no loop attribute." },
+        "loop": { "bxml": null, "status": "partial", "notes": "BXML has no loop attribute, so a finite loop=\"N\" is expanded into the PlayAudio (and any SendDtmf) repeated N times. loop=\"0\" (infinite) and invalid counts cannot be expressed inline, so they emit once and warn." },
         "digits": { "bxml": "SendDtmf", "status": "supported", "notes": "Maps to BW SendDtmf verb. Valid chars: 0-9, *, #, a-d, A-D, w (0.5s pause), W (1s pause), comma (0.5s pause)." }
       }
     },
