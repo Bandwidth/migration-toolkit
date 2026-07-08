@@ -11,7 +11,8 @@
     "generate": "tsx src/generate/cli.ts",
     "bench": "tsx scripts/bench-translate.ts",
     "bench:overhead": "tsx scripts/bench-adapter-overhead.ts",
-    "latency:report": "tsx scripts/latency-report.ts"
+    "latency:report": "tsx scripts/latency-report.ts",
+    "playground:build": "tsx scripts/build-playground.ts"
   },
   "dependencies": {
     "@fastify/formbody": "^8.0.2",
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@types/node": "^25.9.2",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
