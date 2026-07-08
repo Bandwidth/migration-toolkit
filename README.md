@@ -2,7 +2,7 @@
 
 **Run an existing Twilio voice app on Bandwidth's network — without rewriting it.** Point your app at the adapter, change one URL, and its calls now run on Bandwidth. The code never changes.
 
-> **Status:** Inbound/outbound calls, call control, recordings, and the two key webhooks are working and proven on real calls. Number **search** is live-verified; number **ordering/release** are experimental (see [Number lifecycle](#number-lifecycle)). 255 automated tests, typecheck clean.
+> **Status:** Inbound/outbound calls, call control, recordings, and the two key webhooks are working and proven on real calls. Number **search** is live-verified; number **ordering/release** are experimental (see [Number lifecycle](#number-lifecycle)). 265 automated tests, typecheck clean.
 
 ---
 
@@ -57,6 +57,14 @@ The translation is a fixed rulebook driven by a single [compatibility matrix](sr
 
 ## Quickstart
 
+**Migration Preflight playground (for demos — a double-click HTML file):**
+```bash
+npm install
+npm run playground:build      # writes dist/playground.html
+open dist/playground.html     # (macOS) or just double-click it
+```
+A single self-contained page — no server, no network, works offline. Paste a customer's TwiML (or pick a curated example) and see the live *works-as-is / heads-up / blocker* verdict, a migration-complexity score, the translated BXML, and a forwardable report. It runs the **real** translation engine in the browser, so the verdict matches what the adapter does in production. Built for sales engineers to drive live on a screen-share; see [`web/README.md`](web/README.md).
+
 **See a migration report (30s, no accounts):**
 ```bash
 npm install
@@ -69,7 +77,7 @@ Prints a migration-complexity score and a per-feature *works-as-is / heads-up / 
 **Run the adapter** (Node 20+):
 ```bash
 npm start          # adapter on :3000
-npm test           # 255 tests
+npm test           # 265 tests
 npm run typecheck
 ```
 
@@ -136,7 +144,7 @@ Reproduce the live check (read-only by default) with [`scripts/verify-numbers-li
 
 ## How it's built
 
-All translation is driven by one declarative compatibility matrix (`src/matrix/twilio-voice.json`) — the runtime adapter and the pre-flight report read the same data, so they can't disagree.
+All translation is driven by one declarative compatibility matrix (`src/matrix/twilio-voice.json`) — the runtime adapter, the pre-flight report, and the Migration Preflight playground all read the same data, so they can't disagree.
 
 ```
 src/translator   TwiML → BXML translation
@@ -145,6 +153,8 @@ src/streams      Media Streams bridge
 src/numbers      number-lifecycle facade (search/order/release)
 src/server       the proxy (Fastify) wiring it together
 src/preflight    static migration-complexity report
+web              Migration Preflight playground (double-click HTML demo)
+scripts          build-playground.ts + benches / live-verify helpers
 ```
 
 Tests live in `test/` (Vitest); CI gates `npm run typecheck` + `npm test`.

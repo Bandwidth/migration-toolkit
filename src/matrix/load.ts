@@ -1,7 +1,5 @@
 import { z } from "zod";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
+import matrixData from "./twilio-voice.json" with { type: "json" };
 
 const Status = z.enum(["supported", "partial", "unsupported"]);
 
@@ -30,5 +28,5 @@ export type VerbMapping = z.infer<typeof VerbMappingSchema>;
 export type CompatMatrix = z.infer<typeof MatrixSchema>;
 
 export function loadMatrix(): CompatMatrix {
-  return MatrixSchema.parse(require("./twilio-voice.json"));
+  return MatrixSchema.parse(matrixData);
 }
