@@ -23,6 +23,7 @@ describe("inbound path against the real captured BW initiate payload", () => {
         authToken: "tok",
         publicBaseUrl: "https://adapter.test",
         voiceUrl: "https://customer.test/voice",
+        allowPrivateEgress: true,
       },
       { fetchImpl, bwClient: { createCall: vi.fn(), modifyCall: vi.fn(), getCall: vi.fn(), listRecordings: vi.fn(), getRecording: vi.fn(), getRecordingMedia: vi.fn(), updateRecording: vi.fn() } },
     );

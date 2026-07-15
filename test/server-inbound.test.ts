@@ -6,6 +6,7 @@ const config = {
   authToken: "tok",
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
+  allowPrivateEgress: true,
 };
 
 function appWithTwiml(twimlByUrl: Record<string, string>) {

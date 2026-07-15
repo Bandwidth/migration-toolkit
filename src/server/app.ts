@@ -9,6 +9,7 @@ import {
   recordingStatusParams,
   postToCustomer,
 } from "../twilio/egress.js";
+import { EgressBlockedError } from "../twilio/egress-guard.js";
 import { toCallSid, toRecordingSid, toIncomingPhoneNumberSid } from "../twilio/call-sid.js";
 import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
 import {
@@ -39,6 +40,8 @@ export interface AdapterConfig {
     siteId: string;
     peerId?: string;
   };
+  /** Allow outbound fetches to private/loopback ranges (local dev). Default false. */
+  allowPrivateEgress?: boolean;
 }
 
 export interface AdapterDeps {
@@ -112,12 +115,22 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     // not ours) and the TwiML→BXML translation tax (CPU, ours). With ADAPTER_LOG=1
     // each turn logs both; see `npm run bench` for the translation tax in isolation.
     const fetchStart = performance.now();
-    const twiml = await postToCustomer({
-      url: customerUrl,
-      params,
-      authToken: config.authToken,
-      fetchImpl: deps.fetchImpl,
-    });
+    let twiml: string;
+    try {
+      twiml = await postToCustomer({
+        url: customerUrl,
+        params,
+        authToken: config.authToken,
+        fetchImpl: deps.fetchImpl,
+        allowPrivate: config.allowPrivateEgress,
+      });
+    } catch (err) {
+      if (err instanceof EgressBlockedError) {
+        app.log.error({ customerUrl, err }, "egress blocked");
+        return reply.code(502).send({ error: "blocked egress target" });
+      }
+      throw err;
+    }
     const translateStart = performance.now();
     const result = translateTwiml(twiml, { rewriteUrl: rewriter(customerUrl) });
     app.log.info(
@@ -196,6 +209,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
             params,
             authToken: config.authToken,
             fetchImpl: deps.fetchImpl,
+            allowPrivate: config.allowPrivateEgress,
           });
         } catch (err) {
           app.log.error({ callId: event.callId, err }, "status callback POST failed");
@@ -236,6 +250,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
           params,
           authToken: config.authToken,
           fetchImpl: deps.fetchImpl,
+          allowPrivate: config.allowPrivateEgress,
         });
       } catch (err) {
         app.log.error({ callId: event.callId, err }, "recording status callback POST failed");
