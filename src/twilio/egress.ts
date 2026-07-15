@@ -1,4 +1,5 @@
 import { twilioSignature } from "./signature.js";
+import { assertPublicUrl } from "./egress-guard.js";
 import type { CallRecord } from "../server/call-store.js";
 
 // Twilio's real voice webhooks (verified by live capture, see
@@ -112,16 +113,32 @@ export async function postToCustomer(opts: {
   params: Record<string, string>;
   authToken: string;
   fetchImpl?: typeof fetch;
+  allowPrivate?: boolean;
+  lookup?: (host: string) => Promise<string[]>;
+  timeoutMs?: number;
 }): Promise<string> {
   const doFetch = opts.fetchImpl ?? fetch;
-  const res = await doFetch(opts.url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-Twilio-Signature": twilioSignature(opts.authToken, opts.url, opts.params),
-    },
-    body: new URLSearchParams(opts.params).toString(),
-  });
-  if (!res.ok) throw new Error(`Customer webhook ${opts.url} returned ${res.status}`);
-  return await res.text();
+  // Validate + resolve BEFORE any network call. Throws EgressBlockedError on a
+  // disallowed destination.
+  await assertPublicUrl(opts.url, { allowPrivate: opts.allowPrivate, lookup: opts.lookup });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? 10_000);
+  try {
+    const res = await doFetch(opts.url, {
+      method: "POST",
+      redirect: "manual", // a public URL 302-ing to an internal one is the classic bypass
+      signal: ac.signal,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Twilio-Signature": twilioSignature(opts.authToken, opts.url, opts.params),
+      },
+      body: new URLSearchParams(opts.params).toString(),
+    });
+    if (res.status >= 300 && res.status < 400)
+      throw new Error(`Customer webhook ${opts.url} attempted a redirect (${res.status})`);
+    if (!res.ok) throw new Error(`Customer webhook ${opts.url} returned ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
 }
