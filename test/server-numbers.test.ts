@@ -8,6 +8,8 @@ const config = {
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
   numbers: { siteId: "site-1", peerId: "peer-1" },
+  webhookUser: "u",
+  webhookPassword: "p",
 };
 const auth = "Basic " + Buffer.from("AC123:tok").toString("base64");
 

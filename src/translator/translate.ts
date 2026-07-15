@@ -14,6 +14,9 @@ export interface Finding {
 
 export interface TranslateOptions {
   rewriteUrl?: (url: string, kind: UrlKind) => string;
+  /** Basic-auth credentials to stamp onto emitted BXML callback verbs so Bandwidth
+   *  authenticates its continuation callbacks (e.g. /bw/continue). */
+  callbackAuth?: { username: string; password: string };
 }
 
 export interface TranslateResult {
@@ -162,6 +165,35 @@ function mapVoice(twilioVoice: string): string | null {
   return null; // unrecognized — drop rather than break the call
 }
 
+// Attrs that carry a rewritten adapter callback URL (Bandwidth will hit these
+// endpoints directly, so they need Basic-auth creds matching the app's CallbackCreds).
+const CALLBACK_URL_ATTRS = [
+  "gatherUrl",
+  "redirectUrl",
+  "recordCompleteUrl",
+  "recordingAvailableUrl",
+  "transferCompleteUrl",
+  "referCompleteUrl",
+] as const;
+
+/** Walks the built element tree and stamps username/password onto any element
+ *  carrying a rewritten adapter callback URL, so Bandwidth Basic-auths the
+ *  continuation request instead of hitting it unauthenticated. */
+function stampCallbackAuth(els: XmlEl[], auth: { username: string; password: string }): void {
+  for (const el of els) {
+    if (el.attrs && CALLBACK_URL_ATTRS.some((a) => el.attrs![a] !== undefined)) {
+      el.attrs.username = auth.username;
+      el.attrs.password = auth.password;
+    }
+    if (el.children) {
+      const childEls = el.children.filter(
+        (c): c is XmlEl => typeof c !== "string" && !("raw" in c),
+      );
+      stampCallbackAuth(childEls, auth);
+    }
+  }
+}
+
 export function translateTwiml(twiml: string, opts: TranslateOptions = {}): TranslateResult {
   const root = parseTwiml(twiml);
   const findings: Finding[] = [];
@@ -171,6 +203,7 @@ export function translateTwiml(twiml: string, opts: TranslateOptions = {}): Tran
     const el = translateVerb(node, findings, rewrite);
     if (el) els.push(...el);
   }
+  if (opts.callbackAuth) stampCallbackAuth(els, opts.callbackAuth);
   return {
     bxml: bxmlDocument(els),
     findings,

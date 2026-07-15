@@ -7,8 +7,12 @@ const config = {
   authToken: "tok",
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
+  allowPrivateEgress: true,
+  webhookUser: "u",
+  webhookPassword: "p",
 };
 const auth = "Basic " + Buffer.from("AC123:tok").toString("base64");
+const webhookAuth = "Basic " + Buffer.from("u:p").toString("base64");
 
 function makeApp() {
   const bwClient = {
@@ -48,6 +52,7 @@ describe("status callback egress on call completion", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/disconnect",
+      headers: { authorization: webhookAuth },
       payload: {
         eventType: "disconnect",
         callId: "c-out-1",
@@ -74,6 +79,7 @@ describe("status callback egress on call completion", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/disconnect",
+      headers: { authorization: webhookAuth },
       payload: { eventType: "disconnect", callId: "c-out-1" },
     });
 
@@ -89,6 +95,7 @@ describe("status callback egress on call completion", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/disconnect",
+      headers: { authorization: webhookAuth },
       payload: { eventType: "disconnect", callId: "c-out-1" },
     });
 

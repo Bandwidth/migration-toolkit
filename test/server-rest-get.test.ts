@@ -7,6 +7,8 @@ const config = {
   authToken: "tok",
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
+  webhookUser: "u",
+  webhookPassword: "p",
 };
 const auth = "Basic " + Buffer.from("AC123:tok").toString("base64");
 

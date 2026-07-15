@@ -7,6 +7,8 @@ const config = {
   authToken: "tok",
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
+  webhookUser: "u",
+  webhookPassword: "p",
 };
 
 describe("POST /2010-04-01/Accounts/:sid/Calls.json", () => {
