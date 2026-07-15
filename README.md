@@ -87,6 +87,7 @@ npm run typecheck
 | `WEBHOOK_USER` / `WEBHOOK_PASSWORD` | Basic-auth creds Bandwidth presents on inbound `/bw/*` webhooks; set the same as your Voice app's `CallbackCreds` |
 | `HOST` | Listen interface (default `127.0.0.1`); set `0.0.0.0` for containers/exposed deployments |
 | `EGRESS_ALLOW_PRIVATE` | Set `1` to allow outbound fetches to private/loopback ranges (local dev only) |
+| `EGRESS_ALLOW_HOSTS` | Optional comma-separated host allowlist; when set, outbound fetches are restricted to exactly these hosts (default-deny) |
 | `PUBLIC_BASE_URL` | Public HTTPS base of this adapter |
 | `CUSTOMER_VOICE_URL` | The customer's Twilio voice webhook (inbound calls) |
 | `BW_ACCOUNT_ID` / `BW_CLIENT_ID` / `BW_CLIENT_SECRET` / `BW_APPLICATION_ID` | Bandwidth credentials (OAuth2 client-credentials) — shared by Voice and the number facade |

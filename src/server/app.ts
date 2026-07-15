@@ -42,6 +42,8 @@ export interface AdapterConfig {
   };
   /** Allow outbound fetches to private/loopback ranges (local dev). Default false. */
   allowPrivateEgress?: boolean;
+  /** Opt-in egress allowlist of expected customer hosts. Empty/undefined → range denylist applies. */
+  egressAllowHosts?: string[];
   /** Basic-auth credentials Bandwidth presents on inbound webhooks (must match the app's CallbackCreds). */
   webhookUser: string;
   webhookPassword: string;
@@ -138,6 +140,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
         authToken: config.authToken,
         fetchImpl: deps.fetchImpl,
         allowPrivate: config.allowPrivateEgress,
+        allowHosts: config.egressAllowHosts,
       });
     } catch (err) {
       if (err instanceof EgressBlockedError) {
@@ -228,6 +231,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
             authToken: config.authToken,
             fetchImpl: deps.fetchImpl,
             allowPrivate: config.allowPrivateEgress,
+            allowHosts: config.egressAllowHosts,
           });
         } catch (err) {
           app.log.error({ callId: event.callId, err }, "status callback POST failed");
@@ -269,6 +273,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
           authToken: config.authToken,
           fetchImpl: deps.fetchImpl,
           allowPrivate: config.allowPrivateEgress,
+          allowHosts: config.egressAllowHosts,
         });
       } catch (err) {
         app.log.error({ callId: event.callId, err }, "recording status callback POST failed");

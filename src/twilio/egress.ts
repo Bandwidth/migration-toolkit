@@ -114,13 +114,14 @@ export async function postToCustomer(opts: {
   authToken: string;
   fetchImpl?: typeof fetch;
   allowPrivate?: boolean;
+  allowHosts?: string[];
   lookup?: (host: string) => Promise<string[]>;
   timeoutMs?: number;
 }): Promise<string> {
   const doFetch = opts.fetchImpl ?? fetch;
   // Validate + resolve BEFORE any network call. Throws EgressBlockedError on a
   // disallowed destination.
-  await assertPublicUrl(opts.url, { allowPrivate: opts.allowPrivate, lookup: opts.lookup });
+  await assertPublicUrl(opts.url, { allowPrivate: opts.allowPrivate, allowHosts: opts.allowHosts, lookup: opts.lookup });
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? 10_000);
   try {

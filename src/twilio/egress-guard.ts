@@ -40,7 +40,7 @@ export function isBlockedAddress(ip: string): boolean {
 
 export async function assertPublicUrl(
   rawUrl: string,
-  opts: { allowPrivate?: boolean; lookup?: (host: string) => Promise<string[]> } = {},
+  opts: { allowPrivate?: boolean; allowHosts?: string[]; lookup?: (host: string) => Promise<string[]> } = {},
 ): Promise<URL> {
   let url: URL;
   try {
@@ -50,6 +50,16 @@ export async function assertPublicUrl(
   }
   if (url.protocol !== "http:" && url.protocol !== "https:")
     throw new EgressBlockedError(`Disallowed scheme: ${url.protocol}`);
+
+  // Opt-in host allowlist ("full remediation"): default-deny by host. Listed
+  // hosts are explicitly trusted, so they bypass the range denylist below.
+  if (opts.allowHosts && opts.allowHosts.length > 0) {
+    const host = url.hostname.toLowerCase();
+    if (!opts.allowHosts.some((h) => h.toLowerCase() === host))
+      throw new EgressBlockedError(`Host not on egress allowlist: ${url.hostname}`);
+    return url;
+  }
+
   if (opts.allowPrivate) return url;
 
   const resolve =

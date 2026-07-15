@@ -50,3 +50,20 @@ describe("assertPublicUrl", () => {
     );
   });
 });
+
+describe("assertPublicUrl host allowlist", () => {
+  const lookup = async () => ["93.184.216.34"];
+  it("allows a host on the allowlist", async () => {
+    const u = await assertPublicUrl("https://voice.customer.com/hook", { allowHosts: ["voice.customer.com"], lookup });
+    expect(u.host).toBe("voice.customer.com");
+  });
+  it("blocks a public host that is NOT on the allowlist", async () => {
+    await expect(
+      assertPublicUrl("https://other.example/hook", { allowHosts: ["voice.customer.com"], lookup }),
+    ).rejects.toBeInstanceOf(EgressBlockedError);
+  });
+  it("allowlisted host bypasses the range denylist (e.g. localhost for dev)", async () => {
+    const u = await assertPublicUrl("http://localhost:4000/voice", { allowHosts: ["localhost"] });
+    expect(u.hostname).toBe("localhost");
+  });
+});
