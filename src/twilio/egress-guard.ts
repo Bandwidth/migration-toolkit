@@ -55,7 +55,22 @@ export async function assertPublicUrl(
   const resolve =
     opts.lookup ??
     (async (host: string) => (await dnsLookup(host, { all: true })).map((a) => a.address));
-  const literal = isIP(url.hostname) ? [url.hostname] : await resolve(url.hostname);
+
+  // Strip brackets from IPv6 literals: new URL("http://[::1]/").hostname === "[::1]",
+  // and net.isIP() does not accept brackets, so classification would otherwise
+  // fall through to DNS resolution instead of the IP fast path.
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+
+  let literal: string[];
+  if (isIP(host)) {
+    literal = [host];
+  } else {
+    try {
+      literal = await resolve(url.hostname);
+    } catch {
+      throw new EgressBlockedError(`Cannot resolve host: ${url.hostname}`);
+    }
+  }
   if (literal.length === 0) throw new EgressBlockedError(`Cannot resolve host: ${url.hostname}`);
   for (const addr of literal) if (isBlockedAddress(addr))
     throw new EgressBlockedError(`Blocked egress target ${url.hostname} -> ${addr}`);

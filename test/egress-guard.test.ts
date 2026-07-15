@@ -34,4 +34,19 @@ describe("assertPublicUrl", () => {
     const u = await assertPublicUrl("https://evil.test/meta", { lookup, allowPrivate: true });
     expect(u.host).toBe("evil.test");
   });
+  it("rejects a blocked IPv6 literal without needing DNS", async () => {
+    await expect(assertPublicUrl("https://[::1]/", {})).rejects.toBeInstanceOf(EgressBlockedError);
+  });
+  it("allows a public IPv6 literal without needing DNS", async () => {
+    const u = await assertPublicUrl("https://[2606:4700:4700::1111]/", {});
+    expect(u.host).toBe("[2606:4700:4700::1111]");
+  });
+  it("wraps a throwing resolver as EgressBlockedError", async () => {
+    const throwingLookup = async () => {
+      throw new Error("ENOTFOUND");
+    };
+    await expect(assertPublicUrl("https://unresolvable.test/", { lookup: throwingLookup })).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
+  });
 });
