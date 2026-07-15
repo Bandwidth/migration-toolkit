@@ -1,5 +1,6 @@
 import { buildApp } from "./app.js";
 import { createBwClient } from "../bw/client.js";
+import { TokenManager } from "../bw/token.js";
 
 function env(name: string): string {
   const v = process.env[name];
@@ -25,6 +26,20 @@ const app = buildApp(
       applicationId: env("BW_APPLICATION_ID"),
       environment: bwEnv,
     }),
+    probeToken: async () => {
+      try {
+        const tm = new TokenManager({
+          clientId: env("BW_CLIENT_ID"),
+          clientSecret: env("BW_CLIENT_SECRET"),
+          apiHost: bwEnv === "test" ? "https://test.api.bandwidth.com" : "https://api.bandwidth.com",
+          fetchImpl: fetch,
+        });
+        await tm.getToken();
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
   },
 );
 
