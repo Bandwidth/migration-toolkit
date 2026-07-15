@@ -147,7 +147,10 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
       throw err;
     }
     const translateStart = performance.now();
-    const result = translateTwiml(twiml, { rewriteUrl: rewriter(customerUrl) });
+    const result = translateTwiml(twiml, {
+      rewriteUrl: rewriter(customerUrl),
+      callbackAuth: { username: config.webhookUser, password: config.webhookPassword },
+    });
     app.log.info(
       {
         customerUrl,
