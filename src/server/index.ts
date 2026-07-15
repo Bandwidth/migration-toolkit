@@ -33,6 +33,8 @@ const app = buildApp(
     authToken: env("ADAPTER_AUTH_TOKEN"),
     publicBaseUrl: env("PUBLIC_BASE_URL"),
     voiceUrl: env("CUSTOMER_VOICE_URL"),
+    webhookUser: env("WEBHOOK_USER"),
+    webhookPassword: env("WEBHOOK_PASSWORD"),
     ...(siteId ? { numbers: { siteId, peerId: optEnv("BW_PEER_ID") } } : {}),
   },
   {

@@ -7,7 +7,10 @@ const config = {
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
   allowPrivateEgress: true,
+  webhookUser: "u",
+  webhookPassword: "p",
 };
+const webhookAuth = "Basic " + Buffer.from("u:p").toString("base64");
 
 function appWithTwiml(twimlByUrl: Record<string, string>) {
   const fetchImpl = vi.fn(async (url: any) => {
@@ -28,6 +31,7 @@ describe("POST /bw/initiate", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/initiate",
+      headers: { authorization: webhookAuth },
       payload: {
         eventType: "initiate",
         callId: "c-1",
@@ -51,6 +55,7 @@ describe("POST /bw/initiate", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/initiate",
+      headers: { authorization: webhookAuth },
       payload: { eventType: "initiate", callId: "c-2", from: "+1", to: "+2", direction: "inbound" },
     });
     expect(res.body).toContain(
@@ -65,6 +70,7 @@ describe("POST /bw/initiate", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/initiate",
+      headers: { authorization: webhookAuth },
       payload: { eventType: "initiate", callId: "c-3", from: "+1", to: "+2", direction: "inbound" },
     });
     expect(res.body).toContain("not yet supported");
@@ -81,11 +87,13 @@ describe("POST /bw/continue", () => {
     await app.inject({
       method: "POST",
       url: "/bw/initiate",
+      headers: { authorization: webhookAuth },
       payload: { eventType: "initiate", callId: "c-4", from: "+1", to: "+2", direction: "inbound" },
     });
     const res = await app.inject({
       method: "POST",
       url: `/bw/continue?next=${encodeURIComponent("https://customer.test/menu")}`,
+      headers: { authorization: webhookAuth },
       payload: { eventType: "gather", callId: "c-4", digits: "1" },
     });
     expect(res.body).toContain("You pressed one");
@@ -100,6 +108,7 @@ describe("POST /bw/disconnect", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/disconnect",
+      headers: { authorization: webhookAuth },
       payload: { eventType: "disconnect", callId: "c-9" },
     });
     expect(res.statusCode).toBe(204);

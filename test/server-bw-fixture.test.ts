@@ -24,6 +24,8 @@ describe("inbound path against the real captured BW initiate payload", () => {
         publicBaseUrl: "https://adapter.test",
         voiceUrl: "https://customer.test/voice",
         allowPrivateEgress: true,
+        webhookUser: "u",
+        webhookPassword: "p",
       },
       { fetchImpl, bwClient: { createCall: vi.fn(), modifyCall: vi.fn(), getCall: vi.fn(), listRecordings: vi.fn(), getRecording: vi.fn(), getRecordingMedia: vi.fn(), updateRecording: vi.fn() } },
     );
@@ -31,7 +33,10 @@ describe("inbound path against the real captured BW initiate payload", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/initiate",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        authorization: "Basic " + Buffer.from("u:p").toString("base64"),
+      },
       payload: bwFixture.initiateEvent, // full real shape, extra fields included
     });
 

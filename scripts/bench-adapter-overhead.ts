@@ -52,12 +52,16 @@ const stub = createServer((req, res) => {
 });
 
 // ─── the adapter under test (its /bw/initiate path never touches bwClient) ───
+const webhookUser = "bench-user";
+const webhookPassword = "bench-pass";
 const app = buildApp(
   {
     accountSid: "ACbench",
     authToken: "benchtoken",
     publicBaseUrl: "http://127.0.0.1",
     voiceUrl: "http://127.0.0.1/unused",
+    webhookUser,
+    webhookPassword,
   },
   { fetchImpl: fetch, bwClient: {} as unknown as BwClient },
 );
@@ -87,7 +91,10 @@ async function timeAdapter(doc: string, i: number): Promise<number> {
   const t = performance.now();
   const r = await fetch(`${adapterBase}/bw/initiate?voiceUrl=${voiceUrl}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      authorization: "Basic " + Buffer.from(`${webhookUser}:${webhookPassword}`).toString("base64"),
+    },
     // Unique callId per iteration so the query voiceUrl wins over a stored record.
     body: JSON.stringify({
       eventType: "initiate",

@@ -42,6 +42,9 @@ export interface AdapterConfig {
   };
   /** Allow outbound fetches to private/loopback ranges (local dev). Default false. */
   allowPrivateEgress?: boolean;
+  /** Basic-auth credentials Bandwidth presents on inbound webhooks (must match the app's CallbackCreds). */
+  webhookUser: string;
+  webhookPassword: string;
 }
 
 export interface AdapterDeps {
@@ -78,6 +81,18 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   // Logging off by default; set ADAPTER_LOG=1 to enable request/error logs.
   const app = Fastify({ logger: process.env.ADAPTER_LOG === "1" });
   app.register(formbody);
+
+  const expectedWebhookAuth =
+    "Basic " + Buffer.from(`${config.webhookUser}:${config.webhookPassword}`).toString("base64");
+  // Bandwidth authenticates its inbound webhooks with Basic auth (CallbackCreds
+  // on the Voice app + username/password on the BXML callback verbs we emit).
+  app.addHook("onRequest", async (req, reply) => {
+    if (!req.url.startsWith("/bw/")) return;
+    if (!safeEqual(req.headers.authorization ?? "", expectedWebhookAuth)) {
+      return reply.code(401).header("WWW-Authenticate", "Basic").send({ error: "unauthorized" });
+    }
+  });
+
   const store = new CallStore();
 
   const expectedAuth =
