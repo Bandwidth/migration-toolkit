@@ -77,7 +77,7 @@ Prints a migration-complexity score and a per-feature *works-as-is / heads-up / 
 **Run the adapter** (Node 20+):
 ```bash
 npm start          # adapter on :3000
-npm test           # 265 tests
+npm test           # 303 tests
 npm run typecheck
 ```
 

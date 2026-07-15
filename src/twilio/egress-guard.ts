@@ -84,5 +84,10 @@ export async function assertPublicUrl(
   if (literal.length === 0) throw new EgressBlockedError(`Cannot resolve host: ${url.hostname}`);
   for (const addr of literal) if (isBlockedAddress(addr))
     throw new EgressBlockedError(`Blocked egress target ${url.hostname} -> ${addr}`);
+  // NOTE: this only validates the IP(s) resolved here — it does not pin the
+  // connection to them. The caller's fetch() re-resolves the hostname on its
+  // own, so a low-TTL DNS answer could differ between this check and the
+  // actual connect. This is defense-in-depth, not a hard guarantee against
+  // DNS rebinding; the primary control is inbound Basic auth on `/bw/*`.
   return url;
 }
