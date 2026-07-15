@@ -50,10 +50,12 @@ Expected: BXML containing `<Transfer>` to the sales number.
 ## 3. Live call (requires BW account + numbers)
 
 Provisioning checklist: BW test account with Voice API enabled, a sub-account/
-site + SIP peer, 2–3 voice-enabled numbers, a Voice application pointed at the
-public adapter URL (`/bw/initiate`), and a public HTTPS tunnel (ngrok) or small
-host. Call the BW number, walk the IVR by ear. Then exercise outbound via the
-REST facade with the real `twilio` SDK pointed at the adapter base URL.
+site, 2–3 voice-enabled numbers, a Voice application pointed at the public
+adapter URL (`/bw/initiate`), and a public HTTPS tunnel (ngrok) or small host.
+(A SIP peer is only needed on the legacy platform; the default Universal
+Platform path uses a VCP instead — see `AGENTS.md` Phase 2.) Call the BW number,
+walk the IVR by ear. Then exercise outbound via the REST facade with the real
+`twilio` SDK pointed at the adapter base URL.
 
 P0 exit criteria for the live milestone:
 1. Inbound IVR (Say/Gather/Transfer) works on a real phone call.

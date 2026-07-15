@@ -47,7 +47,7 @@ band auth login                       # BW_CLIENT_ID / BW_CLIENT_SECRET; --plain
 band subaccount create --name "<name>" --if-not-exists
 band number search --area-code <ac> --quantity 1
 band number order <number> --subaccount <site-id> --wait
-band app create --name "<app>" --type voice --callback-url "https://<PUBLIC_BASE_URL>/bw/initiate" --if-not-exists
+band app create --name "<app>" --type voice --callback-url "<PUBLIC_BASE_URL>/bw/initiate" --if-not-exists   # PUBLIC_BASE_URL already includes the https:// scheme
 band vcp create --name "<vcp>" --app-id <app-id> --if-not-exists
 band vcp assign <vcp-id> <number>
 band number activate <number> --voice-inbound --wait
@@ -75,8 +75,8 @@ at `<PUBLIC_BASE_URL>/bw/initiate`.
 
 ### Phase 5 — Verify
 ```bash
-npm run doctor        # JSON: which env is set, whether BW token exchange works. Exit 0 = ready.
-curl -s localhost:3000/readyz?deep=1 | jq   # same check over HTTP
+npm run doctor        # full local gate: which env is set AND whether the BW token exchange works. Exit 0 = ready.
+curl -s localhost:3000/readyz | jq          # running-server config/liveness check (env presence only; no token probe, no secrets)
 ```
 🧍 **Human required:** place a real call to the Bandwidth number and walk the IVR
 by ear. There is no scripted end-to-end call check.
@@ -132,3 +132,8 @@ Adapter-specific codes use a private range and are documented here:
 
 Twilio-API-compat errors (e.g. `401`/`404` on the `/2010-04-01/...` facade) keep
 their Twilio codes and semantics.
+
+One exception: a request to a path with **no route at all** (e.g. the removed
+number-provisioning endpoints — use `band` instead) returns the framework's
+default `404` body, not a Twilio-shaped one. Only routed operations go through
+the structured-error path above.

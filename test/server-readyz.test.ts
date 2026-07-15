@@ -12,7 +12,7 @@ const config: AdapterConfig = {
 
 const deps = (over: Partial<AdapterDeps> = {}): AdapterDeps => ({
   fetchImpl: fetch,
-  // minimal bwClient stub; /readyz never calls it
+  // minimal bwClient stub; /readyz never calls it (no outbound work at all)
   bwClient: {} as AdapterDeps["bwClient"],
   ...over,
 });
@@ -25,13 +25,14 @@ function stubReadyEnv() {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("GET /readyz", () => {
-  it("returns 200 and a shallow report when configured", async () => {
+  it("returns 200 and a config-only report when configured", async () => {
     stubReadyEnv();
     const app = buildApp(config, deps());
     const res = await app.inject({ method: "GET", url: "/readyz" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.ready).toBe(true);
+    // No outbound token probe over HTTP — the endpoint is side-effect-free.
     expect(body.bwToken.probed).toBe(false);
   });
 
@@ -43,19 +44,12 @@ describe("GET /readyz", () => {
     expect(res.json().missingEnv.length).toBeGreaterThan(0);
   });
 
-  it("probes the token on ?deep=1 and returns 503 when it fails", async () => {
+  it("never probes the token, even with ?deep=1 (no anonymous OAuth trigger)", async () => {
     stubReadyEnv();
-    const app = buildApp(config, deps({ probeToken: async () => ({ ok: false, error: "bad creds" }) }));
+    const app = buildApp(config, deps());
     const res = await app.inject({ method: "GET", url: "/readyz?deep=1" });
-    expect(res.statusCode).toBe(503);
-    expect(res.json().bwToken).toEqual({ probed: true, ok: false, error: "bad creds" });
-  });
-
-  it("returns 503 on ?deep=1 when no probe is wired (does not silently pass)", async () => {
-    stubReadyEnv();
-    const app = buildApp(config, deps()); // no probeToken in deps
-    const res = await app.inject({ method: "GET", url: "/readyz?deep=1" });
-    expect(res.statusCode).toBe(503);
-    expect(res.json().bwToken.ok).toBe(false);
+    expect(res.statusCode).toBe(200);
+    // ?deep=1 is inert: the live probe lives only in `npm run doctor`.
+    expect(res.json().bwToken.probed).toBe(false);
   });
 });

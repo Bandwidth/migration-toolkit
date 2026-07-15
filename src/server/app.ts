@@ -32,8 +32,6 @@ export interface AdapterConfig {
 export interface AdapterDeps {
   fetchImpl: typeof fetch;
   bwClient: BwClient;
-  /** Attempts a live Bandwidth OAuth2 token exchange, for GET /readyz?deep=1. */
-  probeToken?: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 interface BwEvent {
@@ -411,15 +409,13 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     return reply.code(400).send(twilioErrors.missingUrl400);
   });
 
-  app.get("/readyz", async (req, reply) => {
-    const deep = (req.query as { deep?: string }).deep === "1";
-    // On ?deep=1 without a wired probe, report the token as unavailable rather
-    // than silently passing (probed:false would mislead the caller into thinking
-    // the token is fine).
-    const probeToken = deep
-      ? (deps.probeToken ?? (async () => ({ ok: false, error: "token probe unavailable" })))
-      : undefined;
-    const report = await checkReadiness({ env: process.env, probeToken });
+  // Config/liveness check: reports required-env presence only. Deliberately
+  // side-effect-free and secret-free — no outbound Bandwidth call — so it is
+  // safe to expose unauthenticated. The live token probe lives only in the
+  // local `npm run doctor` CLI, so an anonymous caller can neither trigger an
+  // authenticated OAuth exchange nor observe upstream auth detail here.
+  app.get("/readyz", async (_req, reply) => {
+    const report = await checkReadiness({ env: process.env });
     return reply.code(report.ready ? 200 : 503).send(report);
   });
 
