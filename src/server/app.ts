@@ -11,6 +11,7 @@ import {
 } from "../twilio/egress.js";
 import { toCallSid, toRecordingSid } from "../twilio/call-sid.js";
 import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
+import { adapterErrors } from "./errors.js";
 import {
   recordingList,
   recordingResource,
@@ -62,6 +63,18 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   // Logging off by default; set ADAPTER_LOG=1 to enable request/error logs.
   const app = Fastify({ logger: process.env.ADAPTER_LOG === "1" });
   app.register(formbody);
+  app.setErrorHandler((err, _req, reply) => {
+    // Full detail (incl. upstream bodies) goes to logs only, never the response.
+    app.log.error({ err }, "unhandled adapter error");
+    const sc = (err as { statusCode?: number }).statusCode;
+    // Preserve a client-error status Fastify already classified (e.g. malformed
+    // body → 400); everything else is a neutral internal 500. We do NOT relabel
+    // arbitrary throws as "Bandwidth" failures or forward err.message.
+    if (sc && sc >= 400 && sc < 500) {
+      return reply.code(sc).send({ ...adapterErrors.internal(), status: sc, code: 90003, message: "Invalid request" });
+    }
+    return reply.code(500).send(adapterErrors.internal());
+  });
   const store = new CallStore();
 
   const rewriter = (base: string) => (url: string, kind: UrlKind) => {
@@ -141,7 +154,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   app.post("/bw/continue", async (req, reply) => {
     const event = req.body as BwEvent;
     const query = req.query as { next?: string };
-    if (!query.next) return reply.code(400).send({ error: "missing next" });
+    if (!query.next) return reply.code(400).send(adapterErrors.missingParam("next"));
     const record =
       store.get(event.callId) ??
       ({
