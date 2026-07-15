@@ -38,10 +38,13 @@ the Twilio SDK to build TwiML at runtime, it is a **dynamic source** — there i
 static markup to transpile. See "Capability boundaries".
 
 ### Phase 2 — Provision (via `band`)
+This runbook uses the **Universal Platform (VCP)** path, `band`'s default for
+new accounts; legacy-platform accounts provision a SIP peer instead via the
+`--legacy` subcommands (see `band quickstart --help`) and skip the
+`vcp create`/`vcp assign` steps below.
 ```bash
 band auth login                       # BW_CLIENT_ID / BW_CLIENT_SECRET; --plain for JSON. Needs a keychain backend on headless hosts.
 band subaccount create --name "<name>" --if-not-exists
-band location create --site <site-id> --name "<peer-name>" --if-not-exists
 band number search --area-code <ac> --quantity 1
 band number order <number> --subaccount <site-id> --wait
 band app create --name "<app>" --type voice --callback-url "https://<PUBLIC_BASE_URL>/bw/initiate" --if-not-exists
