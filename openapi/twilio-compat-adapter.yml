@@ -1,0 +1,405 @@
+openapi: 3.0.1
+
+info:
+  description: |-
+    **Twilio-compatibility facade for Bandwidth Programmable Voice.**
+
+    This API lets an existing Twilio voice application run on Bandwidth's network
+    by pointing it at the adapter — no application rewrite. Requests and responses
+    intentionally mirror Twilio's `2010-04-01` REST shape (and webhook payloads),
+    and are translated to the Bandwidth Voice API in real time.
+
+    > NOTE: These paths are deliberately **Twilio-shaped** and therefore diverge
+    > from Bandwidth API Standards v3. That is by design — the value of the adapter
+    > is byte-level Twilio compatibility. Treat this spec as a compatibility
+    > reference, not a standards-compliant Bandwidth API.
+
+    ## Maturity
+
+    - **Calls, Recordings** — proven against real Twilio↔Bandwidth calls.
+
+    Number provisioning (search, order, release) is not part of this adapter — that's
+    handled by the Bandwidth `band` CLI (https://dev.bandwidth.com/tools/cli/).
+
+    ## Authentication
+
+    The caller authenticates to the adapter with HTTP Basic, using the Twilio
+    `AccountSid` as the username and the `AuthToken` as the password — exactly as a
+    Twilio SDK client would. The adapter authenticates to Bandwidth separately with
+    OAuth2 client credentials; that token never leaves the adapter.
+
+    ## Callbacks
+
+    The adapter POSTs callbacks to your application in Twilio's shape, signed with the
+    `X-Twilio-Signature` header so your existing signature validation passes:
+
+    - **StatusCallback** — set on `createCall`; POSTed when the call ends, with
+      `CallSid`, `CallStatus=completed`, `CallDuration`, `Duration`.
+    - **recordingStatusCallback** — set via the `<Record recordingStatusCallback="…">`
+      TwiML verb; POSTed when a recording is ready, with `RecordingSid`,
+      `RecordingStatus`, `RecordingDuration`, and a `RecordingUrl` that points back at
+      this facade.
+  title: Twilio Compatibility Adapter (Voice)
+  version: 0.2.0
+  contact:
+    name: Bandwidth Support
+    email: support@bandwidth.com
+    url: https://support.bandwidth.com
+  termsOfService: https://www.bandwidth.com/legal/terms-of-use-bandwidthcom-web-sites/
+
+servers:
+  - url: https://{adapterHost}/2010-04-01
+    description: The deployed adapter (Twilio-shaped base path)
+    variables:
+      adapterHost:
+        default: adapter.example.com
+        description: Public host of the running adapter
+
+security:
+  - basicAuth: []
+
+tags:
+  - name: Calls
+    description: Originate and control live calls.
+  - name: Recordings
+    description: List, fetch, download, and pause/resume recordings.
+
+paths:
+  /Accounts/{accountSid}/Calls.json:
+    post:
+      tags: [Calls]
+      summary: Originate a call
+      description: |-
+        Equivalent to Twilio `calls.create()`. Translated to a Bandwidth outbound call
+        whose answer URL points back at the adapter, so the customer's TwiML drives the call.
+      operationId: createCall
+      parameters:
+        - $ref: '#/components/parameters/accountSidPathParam'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [To, From, Url]
+              properties:
+                To: { type: string, example: '+15552223333', description: Destination number. Missing → error 21201. }
+                From: { type: string, example: '+15550001111', description: Caller ID. Missing → error 21213. }
+                Url: { type: string, format: uri, description: Customer TwiML URL for the call. Missing → error 21205. }
+                StatusCallback: { type: string, format: uri, description: URL the adapter POSTs a completion callback to when the call ends. }
+                StatusCallbackMethod: { type: string, enum: [POST], default: POST, description: HTTP method for the status callback. }
+      responses:
+        '201':
+          description: Call resource created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallResource' }
+        '400':
+          description: Missing required parameter (`21201` To, `21205` Url, `21213` From)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TwilioError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        default: { $ref: '#/components/responses/UnexpectedError' }
+      callbacks:
+        statusCallback:
+          '{$request.body#/StatusCallback}':
+            post:
+              summary: Call-completion callback (Twilio-shaped, X-Twilio-Signature)
+              requestBody:
+                content:
+                  application/x-www-form-urlencoded:
+                    schema:
+                      type: object
+                      properties:
+                        CallSid: { type: string }
+                        AccountSid: { type: string }
+                        From: { type: string }
+                        To: { type: string }
+                        CallStatus: { type: string, example: completed }
+                        CallDuration: { type: string, description: Duration in seconds }
+                        Duration: { type: string, description: Duration in whole minutes (rounded up) }
+                        CallbackSource: { type: string, example: call-progress-events }
+                        SequenceNumber: { type: string, example: '0' }
+              responses:
+                '200': { description: Acknowledged }
+
+  /Accounts/{accountSid}/Calls/{callSid}.json:
+    get:
+      tags: [Calls]
+      summary: Fetch a call
+      operationId: getCall
+      parameters:
+        - $ref: '#/components/parameters/accountSidPathParam'
+        - $ref: '#/components/parameters/callSidPathParam'
+      responses:
+        '200':
+          description: Call resource, with live status mapped from Bandwidth call state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallResource' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/UnexpectedError' }
+    post:
+      tags: [Calls]
+      summary: Modify a live call (hang up or redirect)
+      description: '`Status=completed` hangs up the call; otherwise `Url` redirects it to new TwiML. Neither present → error 21205.'
+      operationId: modifyCall
+      parameters:
+        - $ref: '#/components/parameters/accountSidPathParam'
+        - $ref: '#/components/parameters/callSidPathParam'
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                Status: { type: string, enum: [completed], description: Set to `completed` to hang up. }
+                Url: { type: string, format: uri, description: New TwiML URL to redirect the live call to. }
+      responses:
+        '200':
+          description: Updated call resource (`completed` on hangup, `in-progress` on redirect)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallResource' }
+        '400':
+          description: Neither `Status` nor `Url` supplied (`21205`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TwilioError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/UnexpectedError' }
+
+  /Accounts/{accountSid}/Calls/{callSid}/Recordings.json:
+    get:
+      tags: [Recordings]
+      summary: List a call's recordings
+      operationId: listCallRecordings
+      parameters:
+        - $ref: '#/components/parameters/accountSidPathParam'
+        - $ref: '#/components/parameters/callSidPathParam'
+      responses:
+        '200':
+          description: Paginated recording list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecordingList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/UnexpectedError' }
+
+  /Accounts/{accountSid}/Calls/{callSid}/Recordings/{recordingSid}.json:
+    post:
+      tags: [Recordings]
+      summary: Pause or resume a live recording
+      description: |-
+        Equivalent to Twilio `recordings(sid).update({status})`. Maps `Status=paused` to a
+        Bandwidth pause and `Status=in-progress` to a resume. Any other value — including
+        `stopped` — returns error `21220`, because Bandwidth has no REST *stop* (stopping a
+        recording is the `StopRecording` BXML verb).
+      operationId: updateRecording
+      parameters:
+        - $ref: '#/components/parameters/accountSidPathParam'
+        - $ref: '#/components/parameters/callSidPathParam'
+        - $ref: '#/components/parameters/recordingSidPathParam'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [Status]
+              properties:
+                Status: { type: string, enum: [paused, in-progress], description: '`paused` to pause, `in-progress` to resume. `stopped` is unsupported (21220).' }
+      responses:
+        '200':
+          description: Updated recording resource
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecordingResource' }
+        '400':
+          description: Unsupported status such as `stopped` (`21220`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TwilioError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/UnexpectedError' }
+
+  /Accounts/{accountSid}/Recordings/{recordingSid}.json:
+    get:
+      tags: [Recordings]
+      summary: Fetch recording metadata
+      description: Equivalent to Twilio `recordings(sid).fetch()`. The recording must have been listed on this instance first (state is in memory).
+      operationId: getRecording
+      parameters:
+        - $ref: '#/components/parameters/accountSidPathParam'
+        - $ref: '#/components/parameters/recordingSidPathParam'
+      responses:
+        '200':
+          description: Recording resource
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecordingResource' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/UnexpectedError' }
+
+  /Accounts/{accountSid}/Recordings/{recordingSid}.mp3:
+    get:
+      tags: [Recordings]
+      summary: Download recording media (MP3)
+      description: |-
+        Returns the recording audio, stream-proxied from Bandwidth. `.mp3` and `.wav` both
+        resolve to the same stored media — Bandwidth returns whatever format the recording
+        was stored in, with its own content-type.
+      operationId: getRecordingMediaMp3
+      parameters:
+        - $ref: '#/components/parameters/accountSidPathParam'
+        - $ref: '#/components/parameters/recordingSidPathParam'
+      responses:
+        '200':
+          description: Recording audio
+          content:
+            audio/mpeg:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/UnexpectedError' }
+
+  /Accounts/{accountSid}/Recordings/{recordingSid}.wav:
+    get:
+      tags: [Recordings]
+      summary: Download recording media (WAV)
+      description: See the `.mp3` variant — both suffixes stream the same stored media from Bandwidth.
+      operationId: getRecordingMediaWav
+      parameters:
+        - $ref: '#/components/parameters/accountSidPathParam'
+        - $ref: '#/components/parameters/recordingSidPathParam'
+      responses:
+        '200':
+          description: Recording audio
+          content:
+            audio/wav:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/UnexpectedError' }
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: HTTP Basic with the Twilio AccountSid as username and AuthToken as password.
+
+  parameters:
+    accountSidPathParam:
+      name: accountSid
+      in: path
+      required: true
+      schema: { type: string, example: AC00000000000000000000000000000000 }
+    callSidPathParam:
+      name: callSid
+      in: path
+      required: true
+      schema: { type: string, example: CA00000000000000000000000000000000 }
+    recordingSidPathParam:
+      name: recordingSid
+      in: path
+      required: true
+      schema: { type: string, example: RE00000000000000000000000000000000 }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid Basic auth (`20003`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TwilioError' }
+    NotFound:
+      description: Unknown Call or Recording SID (`20404`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TwilioError' }
+    UnexpectedError:
+      description: |-
+        Any other non-success status (e.g. `405` Method Not Allowed, `429` Too Many
+        Requests, `5XX` server error), returned in the Twilio-shaped error body.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TwilioError' }
+
+  schemas:
+    CallResource:
+      type: object
+      description: Twilio-shaped call resource (snake_case).
+      properties:
+        sid: { type: string, example: CA00000000000000000000000000000000 }
+        account_sid: { type: string }
+        api_version: { type: string, example: '2010-04-01' }
+        to: { type: string }
+        to_formatted: { type: string }
+        from: { type: string }
+        from_formatted: { type: string }
+        status: { type: string, example: queued, description: 'queued / in-progress / completed (mapped from Bandwidth call state).' }
+        direction: { type: string, example: outbound-api }
+        duration: { type: string, nullable: true, description: Duration in seconds }
+        start_time: { type: string, nullable: true }
+        end_time: { type: string, nullable: true }
+        date_created: { type: string }
+        date_updated: { type: string }
+        price: { type: string, nullable: true }
+        price_unit: { type: string, example: USD }
+        uri: { type: string }
+        subresource_uris:
+          type: object
+          additionalProperties: { type: string }
+    RecordingResource:
+      type: object
+      properties:
+        sid: { type: string, example: RE00000000000000000000000000000000 }
+        account_sid: { type: string }
+        api_version: { type: string, example: '2010-04-01' }
+        call_sid: { type: string }
+        conference_sid: { type: string, nullable: true }
+        channels: { type: integer, example: 1 }
+        duration: { type: string }
+        start_time: { type: string, nullable: true }
+        date_created: { type: string }
+        date_updated: { type: string }
+        status: { type: string, example: completed }
+        source: { type: string, example: RecordVerb }
+        price: { type: string, nullable: true }
+        price_unit: { type: string, example: USD }
+        error_code: { type: integer, nullable: true }
+        uri: { type: string }
+        subresource_uris:
+          type: object
+          additionalProperties: { type: string }
+    RecordingList:
+      type: object
+      properties:
+        recordings:
+          type: array
+          items: { $ref: '#/components/schemas/RecordingResource' }
+        page: { type: integer, example: 0 }
+        page_size: { type: integer }
+        start: { type: integer, example: 0 }
+        end: { type: integer }
+        first_page_uri: { type: string }
+        previous_page_uri: { type: string, nullable: true }
+        next_page_uri: { type: string, nullable: true }
+        uri: { type: string }
+    TwilioError:
+      type: object
+      description: |-
+        Twilio-shaped error body. Codes `20003`, `20404`, `21201`, `21205`, and `21213` mirror
+        real Twilio errors. Code `21220` is an adapter-specific condition (unsupported
+        recording stop) shaped like a Twilio error.
+      properties:
+        code: { type: integer, example: 21205 }
+        message: { type: string, example: Url parameter is required. }
+        more_info: { type: string, format: uri }
+        status: { type: integer, example: 400 }
