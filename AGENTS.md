@@ -65,8 +65,11 @@ Set these env vars (the server reads **these exact names** — note the checked-
 |---|---|
 | `ADAPTER_ACCOUNT_SID`, `ADAPTER_AUTH_TOKEN` | agent (adapter's own Twilio-compat creds) |
 | `CUSTOMER_VOICE_URL` | agent (the customer's unchanged Twilio app URL) |
+| `WEBHOOK_USER`, `WEBHOOK_PASSWORD` | agent — Basic-auth creds Bandwidth presents on inbound `/bw/*` webhooks; **must match the `CallbackCreds` set on the BW Voice Application in Phase 2** |
 | `PUBLIC_BASE_URL` | 🧍 **Human required** (public HTTPS host/tunnel) |
 | `BW_ACCOUNT_ID`, `BW_CLIENT_ID`, `BW_CLIENT_SECRET`, `BW_APPLICATION_ID` | from Phase 2 |
+
+> Non-loopback deploys: the listen host defaults to `127.0.0.1`; set `HOST=0.0.0.0` (or a specific interface) to expose the adapter behind your `PUBLIC_BASE_URL`.
 
 ### Phase 4 — Deploy
 🧍 **Human required:** provide a public HTTPS host (or tunnel) for

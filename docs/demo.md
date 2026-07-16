@@ -24,13 +24,20 @@ ADAPTER_ACCOUNT_SID=AC123 ADAPTER_AUTH_TOKEN=demo \
 PUBLIC_BASE_URL=http://localhost:3000 \
 CUSTOMER_VOICE_URL=http://localhost:4000/voice \
 BW_ACCOUNT_ID=x BW_CLIENT_ID=x BW_CLIENT_SECRET=x BW_APPLICATION_ID=x \
+WEBHOOK_USER=demo WEBHOOK_PASSWORD=demo \
+EGRESS_ALLOW_PRIVATE=1 \
 npm start
 ```
+
+> `WEBHOOK_USER`/`WEBHOOK_PASSWORD` gate the inbound `/bw/*` webhooks (the curls
+> below pass them with `-u demo:demo`). `EGRESS_ALLOW_PRIVATE=1` is needed only
+> because this demo's customer app runs on `localhost` — the egress guard blocks
+> loopback/private targets by default.
 
 Terminal C — simulate a Bandwidth `initiate` webhook (a real inbound call):
 
 ```bash
-curl -s -X POST http://localhost:3000/bw/initiate \
+curl -s -u demo:demo -X POST http://localhost:3000/bw/initiate \
   -H 'Content-Type: application/json' \
   -d '{"eventType":"initiate","callId":"demo-1","from":"+15550001111","to":"+15552223333","direction":"inbound"}'
 ```
@@ -40,7 +47,7 @@ Expected: BXML with `<SpeakSentence>` + `<Gather gatherUrl="http://localhost:300
 Simulate the caller pressing 1:
 
 ```bash
-curl -s -X POST 'http://localhost:3000/bw/continue?next=http%3A%2F%2Flocalhost%3A4000%2Fmenu' \
+curl -s -u demo:demo -X POST 'http://localhost:3000/bw/continue?next=http%3A%2F%2Flocalhost%3A4000%2Fmenu' \
   -H 'Content-Type: application/json' \
   -d '{"eventType":"gather","callId":"demo-1","digits":"1"}'
 ```
@@ -76,16 +83,16 @@ Add a stand-in for the customer's callback receiver:
 node -e "require('http').createServer((q,s)=>{let b='';q.on('data',d=>b+=d);q.on('end',()=>{console.log('\n['+q.url+'] '+b);s.end('ok')})}).listen(4001,()=>console.log('catcher :4001'))"
 ```
 
-### 4a. Recording callback (no credentials needed)
+### 4a. Recording callback
 
 Seed a call record via `initiate` (Terminal A from §2 makes it return 200), then
 fire Bandwidth's "recording available" event:
 
 ```bash
-curl -s -X POST http://localhost:3000/bw/initiate -H 'Content-Type: application/json' \
+curl -s -u demo:demo -X POST http://localhost:3000/bw/initiate -H 'Content-Type: application/json' \
   -d '{"eventType":"initiate","callId":"demo-1","from":"+15550001111","to":"+15552223333","direction":"inbound"}' >/dev/null
 
-curl -s -X POST 'http://localhost:3000/bw/recording-status?cb=http%3A%2F%2Flocalhost%3A4001%2Frec-ready' \
+curl -s -u demo:demo -X POST 'http://localhost:3000/bw/recording-status?cb=http%3A%2F%2Flocalhost%3A4001%2Frec-ready' \
   -H 'Content-Type: application/json' \
   -d '{"eventType":"recordingAvailable","callId":"demo-1","recordingId":"r-abc","duration":"PT12S","status":"complete"}'
 ```

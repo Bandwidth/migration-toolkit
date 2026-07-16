@@ -2,7 +2,7 @@
 
 **Run an existing Twilio voice app on Bandwidth's network — without rewriting it.** Point your app at the adapter, change one URL, and its calls now run on Bandwidth. The code never changes.
 
-> **Status:** Inbound/outbound calls, call control, recordings, and the two key webhooks are working and proven on real calls. 226 automated tests, typecheck clean. This adapter does not order or manage Bandwidth numbers itself — pair it with the [`band` CLI](#pairs-with-the-band-cli) for account-side provisioning.
+> **Status:** Inbound/outbound calls, call control, recordings, and the two key webhooks are working and proven on real calls, with an automated test suite and clean typecheck. This adapter does not order or manage Bandwidth numbers itself — pair it with the [`band` CLI](#pairs-with-the-band-cli) for account-side provisioning.
 
 ---
 
@@ -24,7 +24,7 @@ The translation is a fixed rulebook driven by a single [compatibility matrix](sr
 This adapter only translates the **call flow** — it does not touch a customer's
 Bandwidth account. Account-side actions (buying a number, creating a Voice
 Application, activating voice on a number) are a separate concern, handled by
-the [`band` CLI](https://dev.bandwidth.com/docs/cli). The two pair naturally: an
+the [`band` CLI](https://dev.bandwidth.com/tools/cli/). The two pair naturally: an
 agent runs `band` to provision the account, then configures and runs this
 adapter to carry the calls. If you're an agent driving an end-to-end cutover,
 start with **[`AGENTS.md`](AGENTS.md)** — it's the phased runbook with the
@@ -86,7 +86,7 @@ Prints a migration-complexity score and a per-feature *works-as-is / heads-up / 
 **Run the adapter** (Node 20+):
 ```bash
 npm start          # adapter on :3000
-npm test           # 254 tests
+npm test           # run the test suite
 npm run typecheck
 npm run doctor     # readiness check — see AGENTS.md Phase 5
 ```
