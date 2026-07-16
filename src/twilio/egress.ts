@@ -108,6 +108,41 @@ export function recordingStatusParams(
   };
 }
 
+// Cap on the customer webhook response we will buffer. TwiML documents are
+// small; an unbounded read lets a malicious/compromised endpoint stream a huge
+// body that we then parse and (via loop expansion) amplify. 256 KiB is well
+// above any legitimate TwiML document.
+const MAX_TWIML_BYTES = 256 * 1024;
+
+/**
+ * Read a fetch Response body as text, aborting if it exceeds maxBytes. Streams
+ * and counts decoded bytes rather than trusting Content-Length, so a lying or
+ * absent header cannot bypass the cap.
+ */
+async function readCappedText(res: Response, maxBytes: number, url: string): Promise<string> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    // Release the connection; don't leave the oversized body streaming.
+    await res.body?.cancel().catch(() => {});
+    throw new Error(`Customer webhook ${url} response too large (${declared} bytes)`);
+  }
+  if (!res.body) return await res.text();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {}); // don't let a cancel error mask the "too large" error
+      throw new Error(`Customer webhook ${url} response too large (>${maxBytes} bytes)`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export async function postToCustomer(opts: {
   url: string;
   params: Record<string, string>;
@@ -117,6 +152,7 @@ export async function postToCustomer(opts: {
   allowHosts?: string[];
   lookup?: (host: string) => Promise<string[]>;
   timeoutMs?: number;
+  maxBytes?: number;
 }): Promise<string> {
   const doFetch = opts.fetchImpl ?? fetch;
   // Validate + resolve BEFORE any network call. Throws EgressBlockedError on a
@@ -138,7 +174,7 @@ export async function postToCustomer(opts: {
     if (res.status >= 300 && res.status < 400)
       throw new Error(`Customer webhook ${opts.url} attempted a redirect (${res.status})`);
     if (!res.ok) throw new Error(`Customer webhook ${opts.url} returned ${res.status}`);
-    return await res.text();
+    return await readCappedText(res, opts.maxBytes ?? MAX_TWIML_BYTES, opts.url);
   } finally {
     clearTimeout(timer);
   }

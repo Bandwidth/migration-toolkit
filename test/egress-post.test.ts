@@ -31,3 +31,50 @@ describe("postToCustomer egress guard", () => {
     expect(fetchImpl).toHaveBeenCalled();
   });
 });
+
+describe("postToCustomer response-size cap", () => {
+  it("aborts an oversized streamed body early and cancels the reader", async () => {
+    let pulls = 0;
+    let cancelled = false;
+    const chunk = new Uint8Array(64 * 1024); // 64 KiB per pull
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls++;
+        controller.enqueue(chunk); // never-ending source
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetchImpl = vi.fn(async () => new Response(stream, { status: 200 })) as unknown as typeof fetch;
+    await expect(
+      postToCustomer({ url: "http://public.test/hook", params: {}, authToken: "t", fetchImpl, lookup: async () => ["93.184.216.34"] }),
+    ).rejects.toThrow(/too large/);
+    expect(cancelled).toBe(true); // reader was cancelled, not drained
+    expect(pulls).toBeLessThan(16); // stopped ~5 pulls in (256 KiB / 64 KiB), not unbounded
+  });
+
+  it("rejects (and cancels) when Content-Length alone declares oversize", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new Uint8Array(8));
+        c.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const res = new Response(stream, { status: 200, headers: { "content-length": String(300 * 1024) } });
+    const fetchImpl = vi.fn(async () => res) as unknown as typeof fetch;
+    await expect(
+      postToCustomer({ url: "http://public.test/hook", params: {}, authToken: "t", fetchImpl, lookup: async () => ["93.184.216.34"] }),
+    ).rejects.toThrow(/too large/);
+    expect(cancelled).toBe(true);
+  });
+  it("accepts a normal-sized response", async () => {
+    const fetchImpl = vi.fn(async () => new Response("<Response/>", { status: 200 })) as unknown as typeof fetch;
+    const body = await postToCustomer({ url: "http://public.test/hook", params: {}, authToken: "t", fetchImpl, lookup: async () => ["93.184.216.34"] });
+    expect(body).toBe("<Response/>");
+  });
+});
