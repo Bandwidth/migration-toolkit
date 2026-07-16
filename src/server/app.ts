@@ -20,7 +20,7 @@ import {
   bwRecordingStatus,
 } from "../twilio/recording-resource.js";
 import { CallStore, type CallRecord } from "./call-store.js";
-import type { BwClient } from "../bw/client.js";
+import { isSafeBwId, type BwClient } from "../bw/client.js";
 import { checkReadiness } from "./readiness.js";
 import { safeEqual } from "./safe-equal.js";
 
@@ -180,6 +180,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
 
   app.post("/bw/initiate", async (req, reply) => {
     const event = req.body as BwEvent;
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(adapterErrors.invalidParam("callId"));
     const query = req.query as { voiceUrl?: string };
     const existing = store.get(event.callId);
     const voiceUrl = query.voiceUrl ?? existing?.voiceUrl ?? config.voiceUrl;
@@ -197,6 +198,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
 
   app.post("/bw/continue", async (req, reply) => {
     const event = req.body as BwEvent;
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(adapterErrors.invalidParam("callId"));
     const query = req.query as { next?: string };
     if (!query.next) return reply.code(400).send(adapterErrors.missingParam("next"));
     const record =
@@ -218,6 +220,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
 
   app.post("/bw/disconnect", async (req, reply) => {
     const event = req.body as BwEvent;
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(adapterErrors.invalidParam("callId"));
     const record = store.get(event.callId);
     if (record) {
       // Bandwidth bills (and Twilio reports) from answer to end; fall back to 0
@@ -254,6 +257,9 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   // recordingStatusCallback payload and forward it to the customer's callback URL.
   app.post("/bw/recording-status", async (req, reply) => {
     const event = req.body as BwRecordingEvent;
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(adapterErrors.invalidParam("callId"));
+    if (event.recordingId !== undefined && !isSafeBwId(event.recordingId))
+      return reply.code(400).send(adapterErrors.invalidParam("recordingId"));
     const cb = (req.query as { cb?: string }).cb;
     const record = store.get(event.callId);
     if (cb && record && event.recordingId) {

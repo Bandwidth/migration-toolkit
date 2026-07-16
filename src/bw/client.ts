@@ -1,6 +1,27 @@
 import { Readable } from "node:stream";
 import { TokenManager } from "./token.js";
 
+/**
+ * Validate an identifier before interpolating it into a Bandwidth API URL path.
+ * BW call/recording ids are alphanumerics with hyphens/underscores (e.g.
+ * `c-<uuid>`, `r-<uuid>`). Anything else — dots (incl. `.`/`..` path segments,
+ * which encodeURIComponent does NOT neutralize), slashes, or reserved chars —
+ * could reshape the authenticated request path on the BW host, so reject it
+ * rather than sanitize (sanitizing would silently target a different resource).
+ * encodeURIComponent is applied as belt-and-suspenders; it is a no-op for a
+ * valid id.
+ */
+export function isSafeBwId(id: unknown): id is string {
+  return typeof id === "string" && id.length > 0 && id.length <= 256 && /^[A-Za-z0-9_-]+$/.test(id);
+}
+
+function safeId(id: string): string {
+  if (!isSafeBwId(id)) {
+    throw new Error(`Invalid Bandwidth identifier: ${JSON.stringify(id)}`);
+  }
+  return encodeURIComponent(id);
+}
+
 export interface CreateCallOpts {
   to: string;
   from: string;
@@ -99,7 +120,7 @@ export function createBwClient(cfg: {
       return { callId: json.callId };
     },
     async modifyCall(callId, opts) {
-      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${callId}`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: await authHeader() },
         body: JSON.stringify(opts),
@@ -108,7 +129,7 @@ export function createBwClient(cfg: {
         throw new Error(`Bandwidth modifyCall failed: ${res.status} ${await res.text()}`);
     },
     async getCall(callId) {
-      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${callId}`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}`, {
         headers: { Accept: "application/json", Authorization: await authHeader() },
       });
       if (!res.ok)
@@ -118,7 +139,7 @@ export function createBwClient(cfg: {
       return Array.isArray(json) ? json[0] : json;
     },
     async listRecordings(callId) {
-      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${callId}/recordings`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}/recordings`, {
         headers: { Accept: "application/json", Authorization: await authHeader() },
       });
       if (!res.ok)
@@ -128,7 +149,7 @@ export function createBwClient(cfg: {
     },
     async getRecording(callId, recordingId) {
       const res = await fetchImpl(
-        `${base}/accounts/${cfg.accountId}/calls/${callId}/recordings/${recordingId}`,
+        `${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}/recordings/${safeId(recordingId)}`,
         { headers: { Accept: "application/json", Authorization: await authHeader() } },
       );
       if (!res.ok)
@@ -138,7 +159,7 @@ export function createBwClient(cfg: {
     },
     async getRecordingMedia(callId, recordingId) {
       const res = await fetchImpl(
-        `${base}/accounts/${cfg.accountId}/calls/${callId}/recordings/${recordingId}/media`,
+        `${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}/recordings/${safeId(recordingId)}/media`,
         { headers: { Authorization: await authHeader() } },
       );
       if (!res.ok || !res.body)
@@ -150,7 +171,7 @@ export function createBwClient(cfg: {
       };
     },
     async updateRecording(callId, state) {
-      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${callId}/recording`, {
+      const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}/recording`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: await authHeader() },
         body: JSON.stringify({ state }),

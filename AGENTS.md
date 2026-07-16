@@ -129,6 +129,7 @@ Adapter-specific codes use a private range and are documented here:
 | 90001 | 400 | Missing required request parameter |
 | 90002 | 500 | Internal adapter error (detail is in server logs, not the response) |
 | 90003 | 4xx | Malformed request rejected before handling |
+| 90004 | 400 | Request parameter present but failed validation (e.g. an unsafe identifier) |
 
 Twilio-API-compat errors (e.g. `401`/`404` on the `/2010-04-01/...` facade) keep
 their Twilio codes and semantics.

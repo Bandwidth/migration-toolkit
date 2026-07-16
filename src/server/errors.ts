@@ -23,4 +23,8 @@ export const adapterErrors = {
   internal(): AdapterError {
     return { code: 90002, message: "Internal adapter error", more_info: DOCS, status: 500 };
   },
+  /** A request parameter was present but failed validation. */
+  invalidParam(name: string): AdapterError {
+    return { code: 90004, message: `Invalid parameter: ${name}`, more_info: DOCS, status: 400 };
+  },
 } as const;
