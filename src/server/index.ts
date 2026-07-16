@@ -33,6 +33,10 @@ const app = buildApp(
     authToken: env("ADAPTER_AUTH_TOKEN"),
     publicBaseUrl: env("PUBLIC_BASE_URL"),
     voiceUrl: env("CUSTOMER_VOICE_URL"),
+    webhookUser: env("WEBHOOK_USER"),
+    webhookPassword: env("WEBHOOK_PASSWORD"),
+    allowPrivateEgress: process.env.EGRESS_ALLOW_PRIVATE === "1",
+    egressAllowHosts: process.env.EGRESS_ALLOW_HOSTS?.split(",").map((s) => s.trim()).filter(Boolean),
     ...(siteId ? { numbers: { siteId, peerId: optEnv("BW_PEER_ID") } } : {}),
   },
   {
@@ -49,4 +53,5 @@ const app = buildApp(
 );
 
 const port = Number(process.env.PORT ?? 3000);
-app.listen({ port, host: "0.0.0.0" }).then(() => console.log(`adapter listening on :${port}`));
+const host = process.env.HOST ?? "127.0.0.1";
+app.listen({ port, host }).then(() => console.log(`adapter listening on ${host}:${port}`));
