@@ -8,6 +8,8 @@ export const REQUIRED_ENV = [
   "BW_CLIENT_ID",
   "BW_CLIENT_SECRET",
   "BW_APPLICATION_ID",
+  "WEBHOOK_USER",
+  "WEBHOOK_PASSWORD",
 ];
 
 export interface ReadinessReport {
