@@ -9,6 +9,7 @@ import {
   recordingStatusParams,
   postToCustomer,
 } from "../twilio/egress.js";
+import { EgressBlockedError } from "../twilio/egress-guard.js";
 import { toCallSid, toRecordingSid } from "../twilio/call-sid.js";
 import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
 import { adapterErrors } from "./errors.js";
@@ -21,12 +22,20 @@ import {
 import { CallStore, type CallRecord } from "./call-store.js";
 import type { BwClient } from "../bw/client.js";
 import { checkReadiness } from "./readiness.js";
+import { safeEqual } from "./safe-equal.js";
 
 export interface AdapterConfig {
   accountSid: string;
   authToken: string;
   publicBaseUrl: string;
   voiceUrl: string;
+  /** Allow outbound fetches to private/loopback ranges (local dev). Default false. */
+  allowPrivateEgress?: boolean;
+  /** Opt-in egress allowlist of expected customer hosts. Empty/undefined → range denylist applies. */
+  egressAllowHosts?: string[];
+  /** Basic-auth credentials Bandwidth presents on inbound webhooks (must match the app's CallbackCreds). */
+  webhookUser: string;
+  webhookPassword: string;
 }
 
 export interface AdapterDeps {
@@ -61,6 +70,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   // Logging off by default; set ADAPTER_LOG=1 to enable request/error logs.
   const app = Fastify({ logger: process.env.ADAPTER_LOG === "1" });
   app.register(formbody);
+
   app.setErrorHandler((err, _req, reply) => {
     // Full detail (incl. upstream bodies) goes to logs only, never the response.
     app.log.error({ err }, "unhandled adapter error");
@@ -73,7 +83,23 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     }
     return reply.code(500).send(adapterErrors.internal());
   });
+
+  const expectedWebhookAuth =
+    "Basic " + Buffer.from(`${config.webhookUser}:${config.webhookPassword}`).toString("base64");
+  // Bandwidth authenticates its inbound webhooks with Basic auth (CallbackCreds
+  // on the Voice app + username/password on the BXML callback verbs we emit).
+  app.addHook("onRequest", async (req, reply) => {
+    if (!req.url.startsWith("/bw/")) return;
+    if (!safeEqual(req.headers.authorization ?? "", expectedWebhookAuth)) {
+      return reply.code(401).header("WWW-Authenticate", "Basic").send({ error: "unauthorized" });
+    }
+  });
+
   const store = new CallStore();
+
+  const expectedAuth =
+    "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+  const authOk = (req: FastifyRequest) => safeEqual(req.headers.authorization ?? "", expectedAuth);
 
   const rewriter = (base: string) => (url: string, kind: UrlKind) => {
     const absolute = new URL(url, base).toString();
@@ -106,14 +132,28 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     // not ours) and the TwiML→BXML translation tax (CPU, ours). With ADAPTER_LOG=1
     // each turn logs both; see `npm run bench` for the translation tax in isolation.
     const fetchStart = performance.now();
-    const twiml = await postToCustomer({
-      url: customerUrl,
-      params,
-      authToken: config.authToken,
-      fetchImpl: deps.fetchImpl,
-    });
+    let twiml: string;
+    try {
+      twiml = await postToCustomer({
+        url: customerUrl,
+        params,
+        authToken: config.authToken,
+        fetchImpl: deps.fetchImpl,
+        allowPrivate: config.allowPrivateEgress,
+        allowHosts: config.egressAllowHosts,
+      });
+    } catch (err) {
+      if (err instanceof EgressBlockedError) {
+        app.log.error({ customerUrl, err }, "egress blocked");
+        return reply.code(502).send({ error: "blocked egress target" });
+      }
+      throw err;
+    }
     const translateStart = performance.now();
-    const result = translateTwiml(twiml, { rewriteUrl: rewriter(customerUrl) });
+    const result = translateTwiml(twiml, {
+      rewriteUrl: rewriter(customerUrl),
+      callbackAuth: { username: config.webhookUser, password: config.webhookPassword },
+    });
     app.log.info(
       {
         customerUrl,
@@ -190,6 +230,8 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
             params,
             authToken: config.authToken,
             fetchImpl: deps.fetchImpl,
+            allowPrivate: config.allowPrivateEgress,
+            allowHosts: config.egressAllowHosts,
           });
         } catch (err) {
           app.log.error({ callId: event.callId, err }, "status callback POST failed");
@@ -230,6 +272,8 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
           params,
           authToken: config.authToken,
           fetchImpl: deps.fetchImpl,
+          allowPrivate: config.allowPrivateEgress,
+          allowHosts: config.egressAllowHosts,
         });
       } catch (err) {
         app.log.error({ callId: event.callId, err }, "recording status callback POST failed");
@@ -239,10 +283,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   });
 
   app.post("/2010-04-01/Accounts/:accountSid/Calls.json", async (req, reply) => {
-    const header = req.headers.authorization ?? "";
-    const expected =
-      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
-    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    if (!authOk(req)) return reply.code(401).send(twilioErrors.auth401);
     const body = req.body as Record<string, string>;
     const { To, From, Url } = body;
     // Validation order matches live Twilio: To, then Url, then From.
@@ -272,10 +313,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   app.get(
     "/2010-04-01/Accounts/:accountSid/Calls/:callSid/Recordings.json",
     async (req, reply) => {
-      const header = req.headers.authorization ?? "";
-      const expected =
-        "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
-      if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+      if (!authOk(req)) return reply.code(401).send(twilioErrors.auth401);
       const { callSid } = req.params as { callSid: string };
       const record = store.getBySid(callSid);
       if (!record) return reply.code(404).send(twilioErrors.notFound(config.accountSid, callSid));
@@ -291,10 +329,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   );
 
   app.get("/2010-04-01/Accounts/:accountSid/Recordings/:recordingSid.json", async (req, reply) => {
-    const header = req.headers.authorization ?? "";
-    const expected =
-      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
-    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    if (!authOk(req)) return reply.code(401).send(twilioErrors.auth401);
     const { recordingSid } = req.params as { recordingSid: string };
     const ref = store.getRecording(recordingSid);
     if (!ref) return reply.code(404).send(twilioErrors.notFound(config.accountSid, recordingSid));
@@ -305,10 +340,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   // Twilio serves recording audio at .../Recordings/RE....{mp3,wav}; both map to
   // the same BW media stream (BW returns the format the recording is stored in).
   const mediaHandler = async (req: FastifyRequest, reply: FastifyReply) => {
-    const header = req.headers.authorization ?? "";
-    const expected =
-      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
-    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    if (!authOk(req)) return reply.code(401).send(twilioErrors.auth401);
     const { recordingSid } = req.params as { recordingSid: string };
     const ref = store.getRecording(recordingSid);
     if (!ref) return reply.code(404).send(twilioErrors.notFound(config.accountSid, recordingSid));
@@ -324,10 +356,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   app.post(
     "/2010-04-01/Accounts/:accountSid/Calls/:callSid/Recordings/:recordingSid.json",
     async (req, reply) => {
-      const header = req.headers.authorization ?? "";
-      const expected =
-        "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
-      if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+      if (!authOk(req)) return reply.code(401).send(twilioErrors.auth401);
       const { recordingSid } = req.params as { recordingSid: string };
       const ref = store.getRecording(recordingSid);
       if (!ref) return reply.code(404).send(twilioErrors.notFound(config.accountSid, recordingSid));
@@ -345,10 +374,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   );
 
   app.get("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", async (req, reply) => {
-    const header = req.headers.authorization ?? "";
-    const expected =
-      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
-    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    if (!authOk(req)) return reply.code(401).send(twilioErrors.auth401);
     const { callSid } = req.params as { callSid: string };
     const record = store.getBySid(callSid);
     if (!record) return reply.code(404).send(twilioErrors.notFound(config.accountSid, callSid));
@@ -375,10 +401,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   });
 
   app.post("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", async (req, reply) => {
-    const header = req.headers.authorization ?? "";
-    const expected =
-      "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
-    if (header !== expected) return reply.code(401).send(twilioErrors.auth401);
+    if (!authOk(req)) return reply.code(401).send(twilioErrors.auth401);
     const { callSid } = req.params as { callSid: string };
     const record = store.getBySid(callSid);
     if (!record) return reply.code(404).send(twilioErrors.notFound(config.accountSid, callSid));

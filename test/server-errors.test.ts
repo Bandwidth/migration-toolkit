@@ -7,14 +7,22 @@ const config: AdapterConfig = {
   authToken: "tok",
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
+  webhookUser: "u",
+  webhookPassword: "p",
 };
 const auth = "Basic " + Buffer.from("AC123:tok").toString("base64");
+const webhookAuth = "Basic " + Buffer.from("u:p").toString("base64");
 
 describe("structured adapter errors", () => {
   it("returns the Twilio-shaped body for a missing parameter", async () => {
     const app = buildApp(config, { fetchImpl: fetch, bwClient: {} as AdapterDeps["bwClient"] });
-    // /bw/continue with no ?next= is a missing-param error
-    const res = await app.inject({ method: "POST", url: "/bw/continue", payload: { callId: "c1" } });
+    // /bw/continue with no ?next= is a missing-param error (with valid webhook auth)
+    const res = await app.inject({
+      method: "POST",
+      url: "/bw/continue",
+      headers: { authorization: webhookAuth },
+      payload: { callId: "c1" },
+    });
     expect(res.statusCode).toBe(400);
     const body = res.json();
     expect(body).toMatchObject({ code: 90001, message: expect.any(String), more_info: expect.any(String), status: 400 });

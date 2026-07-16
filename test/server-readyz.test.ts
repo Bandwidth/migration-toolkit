@@ -8,6 +8,8 @@ const config: AdapterConfig = {
   authToken: "tok",
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
+  webhookUser: "u",
+  webhookPassword: "p",
 };
 
 const deps = (over: Partial<AdapterDeps> = {}): AdapterDeps => ({

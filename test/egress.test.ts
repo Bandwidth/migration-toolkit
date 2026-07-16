@@ -58,6 +58,7 @@ describe("postToCustomer", () => {
       params,
       authToken: "tok",
       fetchImpl,
+      allowPrivate: true,
     });
     expect(body).toContain("<Hangup/>");
     const [url, init] = (fetchImpl as any).mock.calls[0];
@@ -71,7 +72,13 @@ describe("postToCustomer", () => {
   it("throws on non-2xx", async () => {
     const fetchImpl = vi.fn(async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
     await expect(
-      postToCustomer({ url: "https://x.test/voice", params: {}, authToken: "tok", fetchImpl }),
+      postToCustomer({
+        url: "https://x.test/voice",
+        params: {},
+        authToken: "tok",
+        fetchImpl,
+        allowPrivate: true,
+      }),
     ).rejects.toThrow(/500/);
   });
 });

@@ -36,8 +36,12 @@ const config = {
   authToken: "tok",
   publicBaseUrl: "https://adapter.test",
   voiceUrl: "https://customer.test/voice",
+  allowPrivateEgress: true,
+  webhookUser: "u",
+  webhookPassword: "p",
 };
 const auth = "Basic " + Buffer.from("AC123:tok").toString("base64");
+const webhookAuth = "Basic " + Buffer.from("u:p").toString("base64");
 
 function makeApp() {
   const bwClient = {
@@ -71,6 +75,7 @@ describe("POST /bw/recording-status (recording-available egress)", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/recording-status?cb=" + encodeURIComponent("https://customer.test/rec-ready"),
+      headers: { authorization: webhookAuth },
       payload: {
         eventType: "recordingAvailable",
         callId: "c-out-1",
@@ -101,6 +106,7 @@ describe("POST /bw/recording-status (recording-available egress)", () => {
     const res = await app.inject({
       method: "POST",
       url: "/bw/recording-status?cb=" + encodeURIComponent("https://customer.test/rec-ready"),
+      headers: { authorization: webhookAuth },
       payload: { callId: "nope", recordingId: "r-x" },
     });
     expect(res.statusCode).toBe(204);
