@@ -88,8 +88,14 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     "Basic " + Buffer.from(`${config.webhookUser}:${config.webhookPassword}`).toString("base64");
   // Bandwidth authenticates its inbound webhooks with Basic auth (CallbackCreds
   // on the Voice app + username/password on the BXML callback verbs we emit).
+  // Gate on the ROUTER-matched route (req.routeOptions.url), not the raw
+  // req.url: find-my-way percent-decodes the target before matching, so a raw
+  // path like /%62%77/continue routes to /bw/continue while never starting with
+  // "/bw/". Keying on the matched route closes that decode divergence and can't
+  // be bypassed by encoding. onRequest runs before body parsing, so unauthorized
+  // requests are rejected before any payload is read.
   app.addHook("onRequest", async (req, reply) => {
-    if (!req.url.startsWith("/bw/")) return;
+    if (!(req.routeOptions?.url ?? "").startsWith("/bw/")) return;
     if (!safeEqual(req.headers.authorization ?? "", expectedWebhookAuth)) {
       return reply.code(401).header("WWW-Authenticate", "Basic").send({ error: "unauthorized" });
     }
