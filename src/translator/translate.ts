@@ -195,6 +195,7 @@ function stampCallbackAuth(els: XmlEl[], auth: { username: string; password: str
 }
 
 export function translateTwiml(twiml: string, opts: TranslateOptions = {}): TranslateResult {
+  bxmlByteBudget = MAX_TOTAL_BXML_BYTES;
   const root = parseTwiml(twiml);
   const findings: Finding[] = [];
   const rewrite = opts.rewriteUrl ?? ((u: string) => u);
@@ -226,6 +227,23 @@ function warn(verb: string, message: string, findings: Finding[]): void {
   findings.push({ severity: "warning", verb, message, docsUrl: matrix.verbs[verb]?.docsUrl });
 }
 
+// Twilio's documented ceiling for Say/Play loop counts; also our hard bound on
+// a single verb's expansion so one attribute cannot force unbounded allocation.
+const MAX_LOOP = 1000;
+
+// Document-wide ceiling on total loop-expanded OUTPUT BYTES. The per-verb
+// MAX_LOOP bounds one verb's repeat count, but that alone doesn't bound size:
+// a single <Say loop="1000"> with a large text body is only 1000 elements yet
+// serializes to hundreds of MB. Budgeting serialized bytes bounds both the
+// many-verbs and the one-huge-verb amplifications. 2 MiB is far above any real
+// call flow, far below anything that stresses memory.
+const MAX_TOTAL_BXML_BYTES = 2 * 1024 * 1024;
+// Remaining byte budget for the current translateTwiml call. Reset at the start
+// of each call; safe as module state because translateTwiml runs synchronously
+// with no await. (The one caveat: a caller-supplied rewriteUrl must not itself
+// call translateTwiml re-entrantly — ours is a pure URL builder that doesn't.)
+let bxmlByteBudget = MAX_TOTAL_BXML_BYTES;
+
 /**
  * Twilio's loop="N" repeats a <Say>/<Play>. BXML has no loop attribute, so a
  * finite count is expanded into the verb repeated N times. loop="0" means
@@ -244,8 +262,30 @@ function applyLoop(els: XmlEl[], loop: string | undefined, verb: string, finding
     warn(verb, `loop="${loop}" is not a valid repeat count; content will play once.`, findings);
     return els;
   }
+  // Bound the expansion. Twilio's documented maximum for Say/Play loop is 1000;
+  // without a cap, a value like loop="999999999" (or loop="9e9") would allocate
+  // billions of elements and a multi-gigabyte string on the event loop from a
+  // single attacker-controlled document. Clamp to the max and warn.
+  const count = Math.min(n, MAX_LOOP);
+  if (n > MAX_LOOP)
+    warn(verb, `loop="${loop}" exceeds the maximum of ${MAX_LOOP}; content will repeat ${MAX_LOOP} times.`, findings);
+  // Enforce the document-wide byte budget BEFORE expanding, so a document
+  // cannot amplify to a giant serialized string. Serialize one un-looped copy
+  // to size the unit (bounded by input size), then project the repeated cost.
+  const unitBytes = bxmlDocument(els).length;
+  const projected = count * unitBytes;
+  if (projected > bxmlByteBudget) {
+    findings.push({
+      severity: "error",
+      verb,
+      message: `Total output exceeds the ${MAX_TOTAL_BXML_BYTES}-byte document budget; document rejected.`,
+      docsUrl: matrix.verbs[verb]?.docsUrl,
+    });
+    return els;
+  }
+  bxmlByteBudget -= projected;
   const out: XmlEl[] = [];
-  for (let i = 0; i < n; i++) out.push(...els);
+  for (let i = 0; i < count; i++) out.push(...els);
   return out;
 }
 
