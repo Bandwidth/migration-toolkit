@@ -22,8 +22,6 @@ export class CallStore {
   private byBwId = new Map<string, CallRecord>();
   private bySid = new Map<string, CallRecord>();
   private recordingsBySid = new Map<string, RecordingRef>();
-  /** Resolves a Twilio IncomingPhoneNumber SID back to the E.164 it provisioned. */
-  private numbersBySid = new Map<string, string>();
   put(bwCallId: string, record: CallRecord): void {
     this.byBwId.set(bwCallId, record);
     this.bySid.set(record.sid, record);
@@ -39,11 +37,5 @@ export class CallStore {
   }
   getRecording(recordingSid: string): RecordingRef | undefined {
     return this.recordingsBySid.get(recordingSid);
-  }
-  putNumber(sid: string, phoneNumber: string): void {
-    this.numbersBySid.set(sid, phoneNumber);
-  }
-  getNumber(sid: string): string | undefined {
-    return this.numbersBySid.get(sid);
   }
 }

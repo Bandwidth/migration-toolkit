@@ -48,3 +48,35 @@ describe("Play loop", () => {
     expect(r.findings.some((f) => f.verb === "Play" && f.severity === "warning")).toBe(true);
   });
 });
+
+describe("Say loop is bounded (DoS guard)", () => {
+  it("a huge loop count clamps to 1000 and warns", () => {
+    const r = translateTwiml(`<Response><Say loop="999999999">Hi</Say></Response>`);
+    expect(r.bxml.match(/<SpeakSentence>Hi<\/SpeakSentence>/g)?.length).toBe(1000);
+    expect(
+      r.findings.some((f) => f.verb === "Say" && f.severity === "warning" && /exceeds the maximum/.test(f.message)),
+    ).toBe(true);
+  });
+  it("scientific-notation counts are bounded too (loop=9e9)", () => {
+    const r = translateTwiml(`<Response><Say loop="9e9">Hi</Say></Response>`);
+    expect(r.bxml.match(/<SpeakSentence>Hi<\/SpeakSentence>/g)?.length).toBe(1000);
+  });
+  it("loop exactly at the maximum is allowed without warning", () => {
+    const r = translateTwiml(`<Response><Say loop="1000">Hi</Say></Response>`);
+    expect(r.bxml.match(/<SpeakSentence>Hi<\/SpeakSentence>/g)?.length).toBe(1000);
+    expect(r.findings.some((f) => f.verb === "Say")).toBe(false);
+  });
+});
+
+describe("translation output is byte-bounded", () => {
+  it("rejects a document whose loop expansion would exceed the byte budget", () => {
+    const big = "x".repeat(3000); // ~3 KB unit * 1000 = ~3 MB > 2 MB budget
+    const r = translateTwiml(`<Response><Say loop="1000">${big}</Say></Response>`);
+    expect(r.hasErrors).toBe(true);
+    expect(r.findings.some((f) => f.severity === "error" && /Total output exceeds/.test(f.message))).toBe(true);
+  });
+  it("allows a normal looped document well under the budget", () => {
+    const r = translateTwiml(`<Response><Say loop="1000">Hi</Say></Response>`);
+    expect(r.hasErrors).toBe(false);
+  });
+});

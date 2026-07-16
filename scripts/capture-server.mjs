@@ -27,8 +27,11 @@ createServer((req, res) => {
       contentType: req.headers["content-type"] ?? null,
       bodyRaw: raw,
       bodyParams: Object.fromEntries(new URLSearchParams(raw)),
+      // `leg` is recorded here for reference but never used in the filename —
+      // request input must not participate in filesystem addressing.
+      leg: url.searchParams.get("leg") ?? null,
     };
-    const file = join(OUT, `req-${String(n).padStart(2, "0")}-${url.searchParams.get("leg") ?? "x"}.json`);
+    const file = join(OUT, `req-${String(n).padStart(2, "0")}.json`);
     writeFileSync(file, JSON.stringify(record, null, 2));
     console.log(`captured #${n} ${req.method} ${url.pathname}?${url.search.slice(1)} sig=${record.twilioSignature ? "yes" : "no"}`);
     res.writeHead(200, { "Content-Type": "text/xml" });
