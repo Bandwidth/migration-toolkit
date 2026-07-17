@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp } from "../src/server/app.js";
@@ -68,6 +68,17 @@ describe("live capture", () => {
     const content = readFileSync(join(dir, readdirSync(dir)[0]), "utf8");
     expect(content).toContain(`action="/menu"`);
     expect(content).not.toContain("/bw/continue");
+  });
+
+  it("still serves the call when capture fails (unwritable target)", async () => {
+    // Parent path is a file, so mkdir under it throws — capture must not fail the call.
+    writeFileSync(join(dir, "blocker"), "x");
+    const app = appWithTwiml(baseConfig(join(dir, "blocker", "sub")), {
+      "https://customer.test/voice": `<Response><Say>Hello</Say><Hangup/></Response>`,
+    });
+    const res = await initiate(app, "c-4");
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("<SpeakSentence>Hello</SpeakSentence>");
   });
 
   it("writes nothing when captureDir is unset", async () => {

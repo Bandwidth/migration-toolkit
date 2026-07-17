@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureTwiml } from "../src/server/capture.js";
@@ -15,9 +15,15 @@ afterEach(() => {
 });
 
 describe("captureTwiml", () => {
-  it("writes the raw TwiML to a file under the capture dir", () => {
+  it("writes the raw TwiML verbatim (no added bytes) to a file under the capture dir", () => {
     const file = captureTwiml(dir, TWIML);
-    expect(readFileSync(file, "utf8")).toContain(TWIML);
+    expect(readFileSync(file, "utf8")).toBe(TWIML);
+  });
+
+  it("writes captures private (0600 file, 0700 dir)", () => {
+    const file = captureTwiml(dir, TWIML);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
   });
 
   it("names the file from the content hash only, never request input", () => {
