@@ -23,6 +23,7 @@ import { CallStore, type CallRecord } from "./call-store.js";
 import { isSafeBwId, type BwClient } from "../bw/client.js";
 import { checkReadiness } from "./readiness.js";
 import { safeEqual } from "./safe-equal.js";
+import { captureTwiml } from "./capture.js";
 
 export interface AdapterConfig {
   accountSid: string;
@@ -36,6 +37,8 @@ export interface AdapterConfig {
   /** Basic-auth credentials Bandwidth presents on inbound webhooks (must match the app's CallbackCreds). */
   webhookUser: string;
   webhookPassword: string;
+  /** Opt-in dir to persist each customer TwiML response for later `generate`. Undefined → no capture. */
+  captureDir?: string;
 }
 
 export interface AdapterDeps {
@@ -154,6 +157,16 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
         return reply.code(502).send({ error: "blocked egress target" });
       }
       throw err;
+    }
+    // Capture the raw customer TwiML (URLs verbatim, pre-rewrite) before we
+    // translate it — this is exactly what `generate` ingests to produce
+    // standalone BXML for the paths a test call exercised.
+    if (config.captureDir) {
+      try {
+        captureTwiml(config.captureDir, twiml);
+      } catch (err) {
+        app.log.error({ err }, "twiml capture failed");
+      }
     }
     const translateStart = performance.now();
     const result = translateTwiml(twiml, {

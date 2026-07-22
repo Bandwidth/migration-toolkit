@@ -102,6 +102,7 @@ npm run doctor     # readiness check — see AGENTS.md Phase 5
 | `CUSTOMER_VOICE_URL` | The customer's Twilio voice webhook (inbound calls) |
 | `BW_ACCOUNT_ID` / `BW_CLIENT_ID` / `BW_CLIENT_SECRET` / `BW_APPLICATION_ID` | Bandwidth credentials (OAuth2 client-credentials), provisioned via `band` — see [`AGENTS.md`](AGENTS.md) |
 | `BW_ENVIRONMENT` | Optional — `test` targets BW's test hosts; defaults to `prod` |
+| `ADAPTER_CAPTURE_DIR` | Optional — dir to persist each customer TwiML response (verbatim, content-addressed) so `generate` can turn the paths a test call exercised into standalone BXML. Essential for SDK-built apps with no static TwiML to transpile. Off by default |
 | `ADAPTER_LOG=1` | Optional — enable request logging |
 
 Run `npm run doctor` (or `GET /readyz?deep=1` once the server is up) to confirm

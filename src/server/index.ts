@@ -19,6 +19,7 @@ const app = buildApp(
     webhookPassword: env("WEBHOOK_PASSWORD"),
     allowPrivateEgress: process.env.EGRESS_ALLOW_PRIVATE === "1",
     egressAllowHosts: process.env.EGRESS_ALLOW_HOSTS?.split(",").map((s) => s.trim()).filter(Boolean),
+    captureDir: process.env.ADAPTER_CAPTURE_DIR,
   },
   {
     fetchImpl: fetch,
