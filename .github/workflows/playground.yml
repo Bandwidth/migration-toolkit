@@ -6,13 +6,15 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: pages
+  group: playground-release
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build
+  release:
+    name: Publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -29,27 +31,15 @@ jobs:
       - name: Build playground
         run: npm run playground:build
 
-      - name: Stage site
+      - name: Publish playground.html to rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p _site
-          cp dist/playground.html _site/index.html
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  deploy:
-    name: Deploy
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          if gh release view playground-latest >/dev/null 2>&1; then
+            gh release upload playground-latest dist/playground.html --clobber
+          else
+            gh release create playground-latest dist/playground.html \
+              --title "Migration Preflight Playground (latest)" \
+              --notes "Auto-published from main on every push. Download playground.html and double-click — no install, no server, works offline." \
+              --latest=false
+          fi
