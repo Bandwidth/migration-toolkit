@@ -120,7 +120,12 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
   (`Enqueue`/`Leave`/`Queue` fail loudly), no WebRTC client endpoint
   (`Client`), and PCI payment capture (`Pay`) is out of scope for the adapter.
 - **Dynamic SDK-built TwiML:** if the customer app generates TwiML at runtime,
-  capture live responses and re-run `generate`, or port the logic by hand.
+  there is no static markup to transpile. Run the adapter with
+  `ADAPTER_CAPTURE_DIR=<dir>` and place a few test calls; each customer TwiML
+  response is written there verbatim (content-addressed, deduped). Then
+  `npm run generate -- <dir> <out>` produces standalone BXML for the paths those
+  calls exercised. Capture only covers exercised paths — branches you never dial
+  won't appear, so drive every flow you care about (or port the rest by hand).
 
 ## Errors
 
