@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { TokenManager } from "./token.js";
+import { USER_AGENT } from "./user-agent.js";
 
 /**
  * Validate an identifier before interpolating it into a Bandwidth API URL path.
@@ -111,7 +112,7 @@ export function createBwClient(cfg: {
     async createCall({ to, from, answerUrl }) {
       const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: await authHeader() },
+        headers: { "Content-Type": "application/json", Authorization: await authHeader(), "User-Agent": USER_AGENT },
         body: JSON.stringify({ to, from, answerUrl, applicationId: cfg.applicationId }),
       });
       if (!res.ok)
@@ -122,7 +123,7 @@ export function createBwClient(cfg: {
     async modifyCall(callId, opts) {
       const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: await authHeader() },
+        headers: { "Content-Type": "application/json", Authorization: await authHeader(), "User-Agent": USER_AGENT },
         body: JSON.stringify(opts),
       });
       if (!res.ok)
@@ -130,7 +131,7 @@ export function createBwClient(cfg: {
     },
     async getCall(callId) {
       const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}`, {
-        headers: { Accept: "application/json", Authorization: await authHeader() },
+        headers: { Accept: "application/json", Authorization: await authHeader(), "User-Agent": USER_AGENT },
       });
       if (!res.ok)
         throw new Error(`Bandwidth getCall failed: ${res.status} ${await res.text()}`);
@@ -140,7 +141,7 @@ export function createBwClient(cfg: {
     },
     async listRecordings(callId) {
       const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}/recordings`, {
-        headers: { Accept: "application/json", Authorization: await authHeader() },
+        headers: { Accept: "application/json", Authorization: await authHeader(), "User-Agent": USER_AGENT },
       });
       if (!res.ok)
         throw new Error(`Bandwidth listRecordings failed: ${res.status} ${await res.text()}`);
@@ -150,7 +151,7 @@ export function createBwClient(cfg: {
     async getRecording(callId, recordingId) {
       const res = await fetchImpl(
         `${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}/recordings/${safeId(recordingId)}`,
-        { headers: { Accept: "application/json", Authorization: await authHeader() } },
+        { headers: { Accept: "application/json", Authorization: await authHeader(), "User-Agent": USER_AGENT } },
       );
       if (!res.ok)
         throw new Error(`Bandwidth getRecording failed: ${res.status} ${await res.text()}`);
@@ -160,7 +161,7 @@ export function createBwClient(cfg: {
     async getRecordingMedia(callId, recordingId) {
       const res = await fetchImpl(
         `${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}/recordings/${safeId(recordingId)}/media`,
-        { headers: { Authorization: await authHeader() } },
+        { headers: { Authorization: await authHeader(), "User-Agent": USER_AGENT } },
       );
       if (!res.ok || !res.body)
         throw new Error(`Bandwidth getRecordingMedia failed: ${res.status} ${await res.text()}`);
@@ -173,7 +174,7 @@ export function createBwClient(cfg: {
     async updateRecording(callId, state) {
       const res = await fetchImpl(`${base}/accounts/${cfg.accountId}/calls/${safeId(callId)}/recording`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: await authHeader() },
+        headers: { "Content-Type": "application/json", Authorization: await authHeader(), "User-Agent": USER_AGENT },
         body: JSON.stringify({ state }),
       });
       if (!res.ok)
