@@ -37,7 +37,7 @@ export interface AdapterConfig {
   /** Basic-auth credentials Bandwidth presents on inbound webhooks (must match the app's CallbackCreds). */
   webhookUser: string;
   webhookPassword: string;
-  /** Opt-in dir to persist each customer TwiML response for later `generate`. Undefined → no capture. */
+  /** Opt-in dir to persist each customer TwiML response for the later BXML Generator. Undefined → no capture. */
   captureDir?: string;
 }
 
@@ -159,7 +159,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
       throw err;
     }
     // Capture the raw customer TwiML (URLs verbatim, pre-rewrite) before we
-    // translate it — this is exactly what `generate` ingests to produce
+    // translate it — this is exactly what the BXML Generator ingests to produce
     // standalone BXML for the paths a test call exercised.
     if (config.captureDir) {
       try {

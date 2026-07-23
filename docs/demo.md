@@ -1,9 +1,9 @@
 # Demo walkthrough
 
-## 1. Pre-flight report (no credentials needed)
+## 1. Compatibility Check (no credentials needed)
 
 ```bash
-npm run preflight -- examples/sample-twilio-app
+npm run compatibility-check -- examples/sample-twilio-app
 ```
 
 Matrix-driven migration report for an unmodified Twilio app: complexity score,
@@ -17,7 +17,7 @@ Terminal A — the "customer's" untouched Twilio app:
 cd examples/sample-twilio-app && npm install && npm start
 ```
 
-Terminal B — the adapter:
+Terminal B — the translator:
 
 ```bash
 ADAPTER_ACCOUNT_SID=AC123 ADAPTER_AUTH_TOKEN=demo \
@@ -62,7 +62,7 @@ adapter URL (`/bw/initiate`), and a public HTTPS tunnel (ngrok) or small host.
 (A SIP peer is only needed on the legacy platform; the default Universal
 Platform path uses a VCP instead — see `AGENTS.md` Phase 2.) Call the BW number,
 walk the IVR by ear. Then exercise outbound via the REST facade with the real
-`twilio` SDK pointed at the adapter base URL.
+`twilio` SDK pointed at the translator base URL.
 
 P0 exit criteria for the live milestone:
 1. Inbound IVR (Say/Gather/Transfer) works on a real phone call.
@@ -79,7 +79,7 @@ CLI; see the Phase 2 runbook in [`AGENTS.md`](../AGENTS.md).
 Add a stand-in for the customer's callback receiver:
 
 ```bash
-# Terminal D — prints whatever the adapter posts back
+# Terminal D — prints whatever the translator posts back
 node -e "require('http').createServer((q,s)=>{let b='';q.on('data',d=>b+=d);q.on('end',()=>{console.log('\n['+q.url+'] '+b);s.end('ok')})}).listen(4001,()=>console.log('catcher :4001'))"
 ```
 
@@ -105,7 +105,7 @@ Expected (Terminal D): a Twilio `recordingStatusCallback` payload —
 ### 4b. Status callback (live call)
 
 The `StatusCallback` URL is captured on the outbound `calls.create` path, so this
-is shown on a live call rather than locally. Point the `twilio` SDK at the adapter:
+is shown on a live call rather than locally. Point the `twilio` SDK at the translator:
 
 ```js
 client.calls.create({

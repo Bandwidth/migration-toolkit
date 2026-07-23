@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { analyzeSource } from "../src/preflight/analyze.js";
-import { renderReport, complexityScore } from "../src/preflight/report.js";
+import { analyzeSource } from "../src/compatibility-check/analyze.js";
+import { renderReport, complexityScore } from "../src/compatibility-check/report.js";
 
 describe("analyzeSource", () => {
   it("detects verbs in embedded TwiML strings", () => {
@@ -41,7 +41,7 @@ describe("report", () => {
       `<Response><Say voice="alice">hi</Say><Enqueue>q</Enqueue></Response>`,
     );
     const md = renderReport([a]);
-    expect(md).toContain("# Twilio → Bandwidth migration pre-flight report");
+    expect(md).toContain("# Twilio → Bandwidth migration — Compatibility Check");
     expect(md).toContain("Enqueue");
     expect(md).toMatch(/complexity/i);
   });

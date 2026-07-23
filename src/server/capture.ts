@@ -4,14 +4,14 @@ import { join } from "node:path";
 
 /**
  * Persist a raw TwiML response the adapter fetched from the customer app, so a
- * later `npm run generate` over the capture dir can turn the paths a test call
+ * later `npm run bxml-generator` over the capture dir can turn the paths a test call
  * actually exercised into standalone BXML.
  *
  * The filename is a content hash — never request input — so identical responses
  * dedupe to one file and untrusted input never participates in filesystem
  * addressing (same guardrail as scripts/capture-server.mjs). We store the raw
  * TwiML verbatim (customer URLs intact, no proxy rewrite), which is exactly what
- * `generate` ingests.
+ * the BXML Generator ingests.
  *
  * Written private-by-default (dir 0700, file 0600): raw TwiML can carry callback
  * URLs with embedded tokens, so captures are not world-readable. Synchronous I/O

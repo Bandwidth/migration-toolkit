@@ -3,8 +3,8 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { ingest } from "../src/generate/ingest.js";
-import { generateDocs } from "../src/generate/generate.js";
+import { ingest } from "../src/bxml-generator/ingest.js";
+import { generateDocs } from "../src/bxml-generator/generate.js";
 
 // Conformance: generated standalone BXML must be accepted by Bandwidth's own
 // CLI (`band bxml raw`). Skips (does not fail) when `band` is not on PATH, so
