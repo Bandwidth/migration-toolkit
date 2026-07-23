@@ -13,7 +13,7 @@ function uniqueUrls(urls: PreservedUrl[]): PreservedUrl[] {
   return [...seen.values()];
 }
 
-/** Plain-English migration report, mirroring the pre-flight report's tone. */
+/** Plain-English migration report, mirroring the Compatibility Check report's tone. */
 export function renderMigration(result: GenerateResult): string {
   const { docs, dynamicSources } = result;
   const clean = docs.filter((d) => d.findings.length === 0).length;

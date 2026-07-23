@@ -2,10 +2,10 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   schemaVersion: v1.0.0
-  name: bw-voice-adapter
-  description: voice adapter
+  name: migration-toolkit
+  description: Developer Migration Toolkit — tools to ease Twilio→Bandwidth voice migration
   annotations:
-    github.com/project-slug: Bandwidth/bw-voice-adapter
+    github.com/project-slug: Bandwidth/migration-toolkit
     bandwidth.com/languages: Node.js
   organization: BW
   costCenter: 

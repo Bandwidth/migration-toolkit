@@ -1,10 +1,10 @@
 # Contributing
 
-Thanks for helping make the adapter better. Issues and PRs are the main way it improves, and they're genuinely welcome.
+Thanks for helping make the Migration Toolkit better. Issues and PRs are the main way it improves, and they're genuinely welcome.
 
 ## How this project is supported
 
-bw-voice-adapter is best-effort and community-supported — not a fully supported Bandwidth product. It's proven on real calls, but there's no team on it full-time, so response times vary and prioritization isn't guaranteed. If something's blocking you, the fastest path is usually a PR you drive yourself. For SLA-backed support on a production migration, talk to your Bandwidth account team.
+The Migration Toolkit is best-effort and community-supported — not a fully supported Bandwidth product. It's proven on real calls, but there's no team on it full-time, so response times vary and prioritization isn't guaranteed. If something's blocking you, the fastest path is usually a PR you drive yourself. For SLA-backed support on a production migration, talk to your Bandwidth account team.
 
 ## How to report a problem
 

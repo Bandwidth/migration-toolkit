@@ -18,7 +18,7 @@ An agent runs `band` to provision, then configures and runs this adapter.
 
 ## What an agent can and cannot do
 
-**Can do unattended:** preflight analysis, provisioning on an *existing*
+**Can do unattended:** compatibility-check analysis, provisioning on an *existing*
 Bandwidth account via `band`, adapter configuration, and the readiness check.
 
 **🧍 Human required** (flagged inline below): creating a brand-new Bandwidth
@@ -27,11 +27,11 @@ host, and final by-ear call verification.
 
 ## Runbook
 
-### Phase 1 — Preflight
+### Phase 1 — Compatibility Check
 ```bash
 npm install
-npm run preflight -- <path-to-customer-twilio-app>   # complexity + per-file verdict
-npm run generate  -- <in-dir> <out-dir>              # writes out/bxml/*, out/MIGRATION.md, out/coverage.json
+npm run compatibility-check -- <path-to-customer-twilio-app>   # complexity + per-file verdict
+npm run bxml-generator  -- <in-dir> <out-dir>              # writes out/bxml/*, out/MIGRATION.md, out/coverage.json
 ```
 Read `out/coverage.json` for the machine-readable verdict. If a source file uses
 the Twilio SDK to build TwiML at runtime, it is a **dynamic source** — there is no
@@ -123,7 +123,7 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
   there is no static markup to transpile. Run the adapter with
   `ADAPTER_CAPTURE_DIR=<dir>` and place a few test calls; each customer TwiML
   response is written there verbatim (content-addressed, deduped). Then
-  `npm run generate -- <dir> <out>` produces standalone BXML for the paths those
+  `npm run bxml-generator -- <dir> <out>` produces standalone BXML for the paths those
   calls exercised. Capture only covers exercised paths — branches you never dial
   won't appear, so drive every flow you care about (or port the rest by hand).
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { ingest, extractTwimlBlocks } from "../src/generate/ingest.js";
-import { generateDoc, generateDocs, bxmlFileName } from "../src/generate/generate.js";
-import { renderMigration, buildCoverage, type GenerateResult } from "../src/generate/report.js";
+import { ingest, extractTwimlBlocks } from "../src/bxml-generator/ingest.js";
+import { generateDoc, generateDocs, bxmlFileName } from "../src/bxml-generator/generate.js";
+import { renderMigration, buildCoverage, type GenerateResult } from "../src/bxml-generator/report.js";
 
 describe("ingest", () => {
   it("treats a standalone .xml TwiML file as one doc", () => {

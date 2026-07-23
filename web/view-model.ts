@@ -1,4 +1,4 @@
-// Pure view model for the Migration Preflight page.
+// Pure view model for the Migration Compatibility Check page.
 //
 // This is the ONLY new logic in the web tool, and it is deliberately thin: it
 // calls the real engine (analyzeSource / complexityScore / translateTwiml) and
@@ -8,8 +8,8 @@
 // page, the verdict shown here provably matches what the adapter does in
 // production. Keep this file DOM-free so it stays unit-testable.
 
-import { analyzeSource } from "../src/preflight/analyze.js";
-import { complexityScore, renderReport } from "../src/preflight/report.js";
+import { analyzeSource } from "../src/compatibility-check/analyze.js";
+import { complexityScore, renderReport } from "../src/compatibility-check/report.js";
 import { translateTwiml } from "../src/translator/translate.js";
 import { loadMatrix } from "../src/matrix/load.js";
 
@@ -42,7 +42,7 @@ export interface PreflightView {
   headsUp: VerbCard[];
   clean: VerbCard[];
   bxml: string;
-  /** The same markdown migration report the CLI preflight produces (for "Copy report"). */
+  /** The same markdown migration report the CLI Compatibility Check produces (for "Copy report"). */
   reportMarkdown: string;
 }
 

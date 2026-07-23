@@ -1,4 +1,4 @@
-import { analyzeSource } from "../preflight/analyze.js";
+import { analyzeSource } from "../compatibility-check/analyze.js";
 
 // A single translatable TwiML document pulled out of the customer's app:
 // a standalone .xml file, a <Response> string embedded in source, or a TwiML
