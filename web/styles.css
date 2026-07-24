@@ -1,4 +1,4 @@
-/* Migration Preflight — styling.
+/* Migration Compatibility Check — styling.
  * Brand tokens live in :root; swap them in one place to re-theme.
  * Design system: Bandwidth (primary #076ea8, DM Sans). @font-face rules for
  * DM Sans are injected by the build (base64) so the artifact stays self-contained. */

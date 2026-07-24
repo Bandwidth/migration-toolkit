@@ -2,10 +2,10 @@ apiVersion: backstage.io/v1alpha1
 kind: Location
 metadata:
   schemaVersion: v1.0.0
-  name: bw-voice-adapter-location
-  description: Links to additional entities in the bw-voice-adapter repository.
+  name: migration-toolkit-location
+  description: Links to additional entities in the migration-toolkit repository.
   annotations:
-    github.com/project-slug: Bandwidth/bw-voice-adapter
+    github.com/project-slug: Bandwidth/migration-toolkit
 spec:
   targets:
     - ./component.yaml

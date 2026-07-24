@@ -22,7 +22,7 @@ function walk(dir: string, out: string[] = []): string[] {
 const input = process.argv[2];
 const outdir = process.argv[3];
 if (!input || !outdir) {
-  console.error("Usage: npm run generate -- <path-to-repo-or-file> <outdir>");
+  console.error("Usage: npm run bxml-generator -- <path-to-repo-or-file> <outdir>");
   process.exit(2);
 }
 

@@ -11,7 +11,7 @@ export interface AdapterError {
 // Adapter-private code range. Deliberately NOT in Twilio's registry — reusing a
 // real Twilio code (e.g. 21610 = STOP/unsubscribed) with a twilio.com link would
 // misdiagnose an adapter failure.
-const DOCS = "https://github.com/Bandwidth/bw-voice-adapter/blob/main/AGENTS.md#errors";
+const DOCS = "https://github.com/Bandwidth/migration-toolkit/blob/main/AGENTS.md#errors";
 
 /** Operational errors the adapter itself raises (distinct from Twilio-API-compat errors). */
 export const adapterErrors = {
