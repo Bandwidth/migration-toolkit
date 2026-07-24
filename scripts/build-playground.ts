@@ -1,4 +1,4 @@
-// Builds the self-contained Migration Preflight artifact: web/ sources + the
+// Builds the self-contained Migration Compatibility Check artifact: web/ sources + the
 // real translation engine + DM Sans fonts, all inlined into a single
 // dist/playground.html a salesperson can double-click. No server, no network.
 

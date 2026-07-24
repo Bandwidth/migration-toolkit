@@ -20,7 +20,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 const target = process.argv[2];
 if (!target) {
-  console.error("Usage: npm run preflight -- <path-to-repo-or-file>");
+  console.error("Usage: npm run compatibility-check -- <path-to-repo-or-file>");
   process.exit(2);
 }
 

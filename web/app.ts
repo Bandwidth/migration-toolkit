@@ -1,4 +1,4 @@
-// DOM wiring for the Migration Preflight page. Keeps no logic of its own beyond
+// DOM wiring for the Migration Compatibility Check page. Keeps no logic of its own beyond
 // presentation — it calls buildView() (which runs the real engine) and paints
 // the result. See view-model.ts for the honesty invariant.
 
