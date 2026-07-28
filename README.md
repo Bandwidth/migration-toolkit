@@ -66,6 +66,11 @@ open dist/playground.html     # (macOS) or just double-click it
 
 No server, no network, works offline. It runs the **real** translation engine in the browser, so the verdict matches what the Real-Time Translator does in production. See [`web/README.md`](web/README.md).
 
+Don't want to build it? Every push to `main` republishes the file to a rolling release:
+[`playground.html`](https://github.com/Bandwidth/migration-toolkit/releases/download/playground-latest/playground.html)
+
+> **This release asset is public-facing.** That `playground-latest` download link is used as a marketing asset on Bandwidth's website, so treat the tag and the `playground.html` filename as a stable contract — renaming or deleting either one breaks a live link. And remember that anything merged to `main` is what a prospect downloads next.
+
 ---
 
 ## Quickstart
