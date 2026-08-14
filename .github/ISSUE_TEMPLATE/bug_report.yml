@@ -1,0 +1,54 @@
+name: Bug report
+description: Something the adapter got wrong — a bad translation, an unexpected failure, or a crash.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The goal here is enough detail to reproduce it without a back-and-forth.
+
+        ⚠️ **Never** paste live credentials, real customer phone numbers, recordings, or any PII. Redact before you post.
+  - type: textarea
+    id: what-you-were-doing
+    attributes:
+      label: What you were trying to do
+      description: The TwiML/verb or REST call involved.
+      placeholder: e.g. Translating a `<Gather>` with a nested `<Play>`.
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened vs. what you expected
+      description: >
+        Include the adapter's output. When it can't do something, it's designed to say so and stop
+        rather than fail silently — paste that message if you got one.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal repro
+      description: The smallest TwiML snippet or request that triggers it. Scrub any real numbers, tokens, or customer data first.
+      render: xml
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Adapter version/commit, Node version, and whether you're hitting real Bandwidth or a test setup.
+      value: |
+        - Adapter version/commit:
+        - Node version:
+        - Target: real Bandwidth / test setup
+    validations:
+      required: true
+  - type: checkboxes
+    id: no-sensitive-data
+    attributes:
+      label: Confirmation
+      options:
+        - label: I've scrubbed all credentials, real phone numbers, recordings, and PII from this report.
+          required: true
