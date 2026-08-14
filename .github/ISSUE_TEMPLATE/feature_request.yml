@@ -1,0 +1,33 @@
+name: Feature or support request
+description: Ask for new verb/attribute support, a capability, or a change to how the adapter behaves.
+title: "[Request]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a best-effort project — see [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md). Requests are welcome, but
+        prioritization isn't guaranteed. If something is blocking you, the fastest path is often a PR you drive yourself.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The migration or use case behind the request — what you're moving and what's in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like the adapter to do?
+      description: >
+        If it's about a specific TwiML verb/attribute or REST call, name it. Translation support is driven by
+        `src/matrix/twilio-voice.json`, so pointing at the exact verb/attribute helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you've tried
+      description: Anything you're doing today to get around this. Optional, but useful.
+    validations:
+      required: false
