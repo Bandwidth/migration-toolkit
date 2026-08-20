@@ -4,7 +4,7 @@ import { buildApp } from "../src/server/app.js";
 const config = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   allowPrivateEgress: true,
   webhookUser: "u",
@@ -59,7 +59,7 @@ describe("POST /bw/initiate", () => {
       payload: { eventType: "initiate", callId: "c-2", from: "+1", to: "+2", direction: "inbound" },
     });
     expect(res.body).toContain(
-      `gatherUrl="https://adapter.test/bw/continue?next=${encodeURIComponent("https://customer.test/menu")}"`,
+      `gatherUrl="https://translator.test/bw/continue?next=${encodeURIComponent("https://customer.test/menu")}"`,
     );
   });
 

@@ -1,11 +1,11 @@
 // test/server-errors.test.ts
 import { describe, it, expect } from "vitest";
-import { buildApp, type AdapterConfig, type AdapterDeps } from "../src/server/app.js";
+import { buildApp, type ServerConfig, type ServerDeps } from "../src/server/app.js";
 
-const config: AdapterConfig = {
+const config: ServerConfig = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   webhookUser: "u",
   webhookPassword: "p",
@@ -13,9 +13,9 @@ const config: AdapterConfig = {
 const auth = "Basic " + Buffer.from("AC123:tok").toString("base64");
 const webhookAuth = "Basic " + Buffer.from("u:p").toString("base64");
 
-describe("structured adapter errors", () => {
+describe("structured translator errors", () => {
   it("returns the Twilio-shaped body for a missing parameter", async () => {
-    const app = buildApp(config, { fetchImpl: fetch, bwClient: {} as AdapterDeps["bwClient"] });
+    const app = buildApp(config, { fetchImpl: fetch, bwClient: {} as ServerDeps["bwClient"] });
     // /bw/continue with no ?next= is a missing-param error (with valid webhook auth)
     const res = await app.inject({
       method: "POST",
@@ -33,7 +33,7 @@ describe("structured adapter errors", () => {
       // createCall must succeed so the store gets seeded and we learn the real SID.
       createCall: async () => ({ callId: "bw-call-1" }),
       getCall: async () => { throw new Error("BW 503 SECRET-UPSTREAM-BODY"); },
-    } as unknown as AdapterDeps["bwClient"];
+    } as unknown as ServerDeps["bwClient"];
     const app = buildApp(config, { fetchImpl: fetch, bwClient });
 
     const created = await app.inject({

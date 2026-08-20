@@ -1,18 +1,18 @@
-// Differential latency harness: the cost of putting the adapter in the path,
+// Differential latency harness: the cost of putting the translator in the path,
 // vs. talking to the customer app directly (the "raw BXML" baseline).
 //
 // Both measurements hit the SAME local stub customer app over real localhost
-// HTTP, so the customer-app cost cancels out and what's left is the adapter's
+// HTTP, so the customer-app cost cancels out and what's left is the translator's
 // own tax — its extra hop + the TwiML→BXML translation:
 //
 //   A  = POST straight to the stub, get a document back.        (native-equivalent baseline)
-//   B  = POST to the adapter's /bw/initiate, which internally   (adapter in the path)
+//   B  = POST to the translator's /bw/initiate, which internally   (translator in the path)
 //        hits that same stub and translates the result.
-//   B − A  = what inserting the adapter costs per IVR turn.
+//   B − A  = what inserting the translator costs per IVR turn.
 //
 // Loopback only — this measures the component we own (one extra hop + CPU),
 // not internet RTT. A real-call number (geographic distance to BW's edge) needs
-// the live setup in docs/demo.md §3 with ADAPTER_LOG=1 (`fetchMs`).
+// the live setup in docs/demo.md §3 with TRANSLATOR_LOG=1 (`fetchMs`).
 //
 //   npm run bench:overhead            # default 1000 iterations per doc
 //   npm run bench:overhead -- 5000    # custom iteration count
@@ -21,7 +21,7 @@ import type { AddressInfo } from "node:net";
 import { buildApp } from "../src/server/app.js";
 import type { BwClient } from "../src/bw/client.js";
 
-// Representative IVR turns the adapter translates per call.
+// Representative IVR turns the translator translates per call.
 const CORPUS: Record<string, string> = {
   "say-simple": `<Response><Say voice="alice">Thanks for calling. Goodbye.</Say><Hangup/></Response>`,
   "gather-menu": `<Response><Gather numDigits="1" action="/menu" method="POST"><Say>For sales press 1. For support press 2.</Say></Gather><Redirect>/welcome</Redirect></Response>`,
@@ -51,7 +51,7 @@ const stub = createServer((req, res) => {
   });
 });
 
-// ─── the adapter under test (its /bw/initiate path never touches bwClient) ───
+// ─── the translator under test (its /bw/initiate path never touches bwClient) ───
 const webhookUser = "bench-user";
 const webhookPassword = "bench-pass";
 const app = buildApp(
@@ -69,9 +69,9 @@ const app = buildApp(
 await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
 await app.listen({ port: 0, host: "127.0.0.1" });
 const stubPort = (stub.address() as AddressInfo).port;
-const adapterPort = (app.server.address() as AddressInfo).port;
+const translatorPort = (app.server.address() as AddressInfo).port;
 const stubBase = `http://127.0.0.1:${stubPort}`;
-const adapterBase = `http://127.0.0.1:${adapterPort}`;
+const translatorBase = `http://127.0.0.1:${translatorPort}`;
 
 const formBody = "CallSid=CAbench&CallStatus=ringing&From=%2B15550001111&To=%2B15552223333";
 
@@ -86,10 +86,10 @@ async function timeDirect(doc: string): Promise<number> {
   return performance.now() - t;
 }
 
-async function timeAdapter(doc: string, i: number): Promise<number> {
+async function timeTranslator(doc: string, i: number): Promise<number> {
   const voiceUrl = encodeURIComponent(`${stubBase}/${doc}`);
   const t = performance.now();
-  const r = await fetch(`${adapterBase}/bw/initiate?voiceUrl=${voiceUrl}`, {
+  const r = await fetch(`${translatorBase}/bw/initiate?voiceUrl=${voiceUrl}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -109,8 +109,8 @@ async function timeAdapter(doc: string, i: number): Promise<number> {
 }
 
 console.log(
-  `[bench-adapter-overhead] ${iterations} iterations/doc (after ${WARMUP} warmup)\n` +
-    `A = direct-to-customer (baseline)   B = through-adapter   overhead = B − A\n`,
+  `[bench-translator-overhead] ${iterations} iterations/doc (after ${WARMUP} warmup)\n` +
+    `A = direct-to-customer (baseline)   B = through-translator   overhead = B − A\n`,
 );
 
 const pad = (s: string, n: number) => s.padEnd(n);
@@ -124,7 +124,7 @@ const allOverhead: number[] = [];
 for (const doc of Object.keys(CORPUS)) {
   for (let i = 0; i < WARMUP; i++) {
     await timeDirect(doc);
-    await timeAdapter(doc, -i - 1);
+    await timeTranslator(doc, -i - 1);
   }
 
   const aTimes: number[] = [];
@@ -133,7 +133,7 @@ for (const doc of Object.keys(CORPUS)) {
   for (let i = 0; i < iterations; i++) {
     // Interleave A and B each iteration so machine jitter hits both equally.
     const a = await timeDirect(doc);
-    const b = await timeAdapter(doc, i);
+    const b = await timeTranslator(doc, i);
     aTimes.push(a);
     bTimes.push(b);
     overhead.push(b - a);
@@ -151,13 +151,13 @@ for (const doc of Object.keys(CORPUS)) {
 const oS = [...allOverhead].sort((x, y) => x - y);
 console.log("─".repeat(75));
 console.log(
-  `\nAdapter overhead (B − A) across all turns: ` +
+  `\nTranslator overhead (B − A) across all turns: ` +
     `mean ${fmt(mean(allOverhead))}, p50 ${fmt(pct(oS, 0.5))}, p99 ${fmt(pct(oS, 0.99))}`,
 );
 console.log(
   `That is one extra localhost hop + translation — the cost of inserting the\n` +
-    `adapter. In production the extra hop carries real network distance to BW's\n` +
-    `voice edge; measure that on a live call (docs/demo.md §3, ADAPTER_LOG=1).`,
+    `translator. In production the extra hop carries real network distance to BW's\n` +
+    `voice edge; measure that on a live call (docs/demo.md §3, TRANSLATOR_LOG=1).`,
 );
 
 await app.close();

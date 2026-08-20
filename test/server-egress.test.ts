@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { buildApp } from "../src/server/app.js";
 
-const base = { accountSid: "AC123", authToken: "tok", publicBaseUrl: "https://adapter.test", voiceUrl: "http://127.0.0.1:4000/voice", webhookUser: "u", webhookPassword: "p" };
+const base = { accountSid: "AC123", authToken: "tok", publicBaseUrl: "https://translator.test", voiceUrl: "http://127.0.0.1:4000/voice", webhookUser: "u", webhookPassword: "p" };
 const bwClient = { createCall: vi.fn(), modifyCall: vi.fn(), getCall: vi.fn(), listRecordings: vi.fn(), getRecording: vi.fn(), getRecordingMedia: vi.fn(), updateRecording: vi.fn() };
 const authHeader = "Basic " + Buffer.from("u:p").toString("base64");
 

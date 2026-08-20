@@ -4,8 +4,8 @@
 // calls the real engine (analyzeSource / complexityScore / translateTwiml) and
 // the real compatibility matrix, then shapes the result for rendering. It does
 // NOT reimplement any translation, scoring, or compatibility rules — that is the
-// honesty invariant: because the same matrix drives the live adapter and this
-// page, the verdict shown here provably matches what the adapter does in
+// honesty invariant: because the same matrix drives the live translator and this
+// page, the verdict shown here provably matches what the translator does in
 // production. Keep this file DOM-free so it stays unit-testable.
 
 import { analyzeSource } from "../src/compatibility-check/analyze.js";

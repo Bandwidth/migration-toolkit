@@ -5,12 +5,12 @@ info:
     **Twilio-compatibility facade for Bandwidth Programmable Voice.**
 
     This API lets an existing Twilio voice application run on Bandwidth's network
-    by pointing it at the adapter — no application rewrite. Requests and responses
+    by pointing it at the translator — no application rewrite. Requests and responses
     intentionally mirror Twilio's `2010-04-01` REST shape (and webhook payloads),
     and are translated to the Bandwidth Voice API in real time.
 
     > NOTE: These paths are deliberately **Twilio-shaped** and therefore diverge
-    > from Bandwidth API Standards v3. That is by design — the value of the adapter
+    > from Bandwidth API Standards v3. That is by design — the value of the translator
     > is byte-level Twilio compatibility. Treat this spec as a compatibility
     > reference, not a standards-compliant Bandwidth API.
 
@@ -18,19 +18,19 @@ info:
 
     - **Calls, Recordings** — proven against real Twilio↔Bandwidth calls.
 
-    Number provisioning (search, order, release) is not part of this adapter — that's
+    Number provisioning (search, order, release) is not part of this translator — that's
     handled by the Bandwidth `band` CLI (https://dev.bandwidth.com/tools/cli/).
 
     ## Authentication
 
-    The caller authenticates to the adapter with HTTP Basic, using the Twilio
+    The caller authenticates to the translator with HTTP Basic, using the Twilio
     `AccountSid` as the username and the `AuthToken` as the password — exactly as a
-    Twilio SDK client would. The adapter authenticates to Bandwidth separately with
-    OAuth2 client credentials; that token never leaves the adapter.
+    Twilio SDK client would. The translator authenticates to Bandwidth separately with
+    OAuth2 client credentials; that token never leaves the translator.
 
     ## Callbacks
 
-    The adapter POSTs callbacks to your application in Twilio's shape, signed with the
+    The translator POSTs callbacks to your application in Twilio's shape, signed with the
     `X-Twilio-Signature` header so your existing signature validation passes:
 
     - **StatusCallback** — set on `createCall`; POSTed when the call ends, with
@@ -39,7 +39,7 @@ info:
       TwiML verb; POSTed when a recording is ready, with `RecordingSid`,
       `RecordingStatus`, `RecordingDuration`, and a `RecordingUrl` that points back at
       this facade.
-  title: Twilio Compatibility Adapter (Voice)
+  title: Real-Time Translator (Voice)
   version: 0.2.0
   contact:
     name: Bandwidth Support
@@ -48,12 +48,12 @@ info:
   termsOfService: https://www.bandwidth.com/legal/terms-of-use-bandwidthcom-web-sites/
 
 servers:
-  - url: https://{adapterHost}/2010-04-01
-    description: The deployed adapter (Twilio-shaped base path)
+  - url: https://{translatorHost}/2010-04-01
+    description: The deployed translator (Twilio-shaped base path)
     variables:
-      adapterHost:
-        default: adapter.example.com
-        description: Public host of the running adapter
+      translatorHost:
+        default: translator.example.com
+        description: Public host of the running translator
 
 security:
   - basicAuth: []
@@ -71,7 +71,7 @@ paths:
       summary: Originate a call
       description: |-
         Equivalent to Twilio `calls.create()`. Translated to a Bandwidth outbound call
-        whose answer URL points back at the adapter, so the customer's TwiML drives the call.
+        whose answer URL points back at the translator, so the customer's TwiML drives the call.
       operationId: createCall
       parameters:
         - $ref: '#/components/parameters/accountSidPathParam'
@@ -86,7 +86,7 @@ paths:
                 To: { type: string, example: '+15552223333', description: Destination number. Missing → error 21201. }
                 From: { type: string, example: '+15550001111', description: Caller ID. Missing → error 21213. }
                 Url: { type: string, format: uri, description: Customer TwiML URL for the call. Missing → error 21205. }
-                StatusCallback: { type: string, format: uri, description: URL the adapter POSTs a completion callback to when the call ends. }
+                StatusCallback: { type: string, format: uri, description: URL the translator POSTs a completion callback to when the call ends. }
                 StatusCallbackMethod: { type: string, enum: [POST], default: POST, description: HTTP method for the status callback. }
       responses:
         '201':
@@ -396,7 +396,7 @@ components:
       type: object
       description: |-
         Twilio-shaped error body. Codes `20003`, `20404`, `21201`, `21205`, and `21213` mirror
-        real Twilio errors. Code `21220` is an adapter-specific condition (unsupported
+        real Twilio errors. Code `21220` is a translator-specific condition (unsupported
         recording stop) shaped like a Twilio error.
       properties:
         code: { type: integer, example: 21205 }

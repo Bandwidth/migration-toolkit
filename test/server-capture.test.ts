@@ -10,7 +10,7 @@ function baseConfig(captureDir?: string) {
   return {
     accountSid: "AC123",
     authToken: "tok",
-    publicBaseUrl: "https://adapter.test",
+    publicBaseUrl: "https://translator.test",
     voiceUrl: "https://customer.test/voice",
     allowPrivateEgress: true,
     webhookUser: "u",

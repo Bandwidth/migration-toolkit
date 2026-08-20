@@ -33,7 +33,7 @@ describe("createBwClient (OAuth2 Bearer against the Voice API)", () => {
     const { callId } = await client.createCall({
       to: "+15552223333",
       from: "+15550001111",
-      answerUrl: "https://adapter.test/bw/initiate",
+      answerUrl: "https://translator.test/bw/initiate",
     });
 
     expect(callId).toBe("c-1");
@@ -59,7 +59,7 @@ describe("createBwClient (OAuth2 Bearer against the Voice API)", () => {
     const fetchImpl = fetchWithToken({ callId: "c-2" }, 201);
     const client = createBwClient({ ...base, environment: "test", fetchImpl });
 
-    await client.createCall({ to: "+1", from: "+2", answerUrl: "https://adapter.test/x" });
+    await client.createCall({ to: "+1", from: "+2", answerUrl: "https://translator.test/x" });
 
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls.some(([u]) => String(u) === "https://test.api.bandwidth.com/api/v1/oauth2/token")).toBe(true);

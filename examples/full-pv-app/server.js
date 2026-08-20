@@ -1,7 +1,7 @@
 // "Full PV" demo — a Twilio voice app that exercises EVERYTHING Bandwidth
 // Programmable Voice supports (verified against dev.bandwidth.com via Context7).
 // Deliberately stays inside the supported surface, so the whole app translates
-// clean through the adapter: no blockers, only expected heads-up notes.
+// clean through the translator: no blockers, only expected heads-up notes.
 //
 // Supported BW PV surface covered here (Twilio verb -> BXML verb):
 //   Say (+SSML, voice)        -> SpeakSentence
@@ -62,7 +62,7 @@ app.post("/voices", (req, res) => {
   const vr = new twiml.VoiceResponse();
   vr.say({ voice: "bridget" }, "This is Bridget speaking.");
   // Real SSML via the Twilio SDK builders (produces actual child elements,
-  // which the adapter now preserves through to BXML SpeakSentence).
+  // which the translator now preserves through to BXML SpeakSentence).
   const s = vr.say({ voice: "julie" });
   s.addText("And this is Julie, with ");
   s.emphasis({ level: "strong" }, "real S S M L emphasis");

@@ -5,7 +5,7 @@ import type { CreateCallOpts, ModifyCallOpts } from "../src/bw/client.js";
 const config = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   webhookUser: "u",
   webhookPassword: "p",
@@ -26,7 +26,7 @@ function makeApp() {
   return { app, bwClient };
 }
 
-// Put a call in the adapter's store and return its Twilio CallSid.
+// Put a call in the translator's store and return its Twilio CallSid.
 async function createCall(app: ReturnType<typeof makeApp>["app"]): Promise<string> {
   const res = await app.inject({
     method: "POST",
@@ -54,7 +54,7 @@ describe("POST /2010-04-01/Accounts/:sid/Calls/:callSid.json (modify live call)"
     expect(res.json().sid).toBe(sid);
   });
 
-  it("Url redirects the call through the adapter to the new customer TwiML", async () => {
+  it("Url redirects the call through the translator to the new customer TwiML", async () => {
     const { app, bwClient } = makeApp();
     const sid = await createCall(app);
 
@@ -68,7 +68,7 @@ describe("POST /2010-04-01/Accounts/:sid/Calls/:callSid.json (modify live call)"
     expect(res.statusCode).toBe(200);
     expect(bwClient.modifyCall).toHaveBeenCalledWith("c-out-1", {
       state: "active",
-      redirectUrl: `https://adapter.test/bw/initiate?voiceUrl=${encodeURIComponent("https://customer.test/step2")}`,
+      redirectUrl: `https://translator.test/bw/initiate?voiceUrl=${encodeURIComponent("https://customer.test/step2")}`,
       redirectMethod: "POST",
     });
   });
