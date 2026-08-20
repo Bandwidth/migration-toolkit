@@ -1,7 +1,7 @@
 // "Full PV" demo — a Twilio voice app that exercises EVERYTHING Bandwidth
 // Programmable Voice supports (verified against dev.bandwidth.com via Context7).
 // Deliberately stays inside the supported surface, so the whole app translates
-// clean through the adapter: no blockers, only expected heads-up notes.
+// clean through the adapter: nothing lacking a direct equivalent, only expected heads-up notes.
 //
 // Supported BW PV surface covered here (Twilio verb -> BXML verb):
 //   Say (+SSML, voice)        -> SpeakSentence

@@ -1,6 +1,6 @@
 # Migration Compatibility Check playground
 
-A single, self-contained HTML file a sales engineer can **double-click** and present to a prospect. Paste a customer's TwiML (or pick a curated example) and it shows — live — how much of that Twilio voice app runs on Bandwidth unchanged: a works-as-is / heads-up / blocker verdict, a migration-complexity score, the translated BXML, and a forwardable report.
+A single, self-contained HTML file a sales engineer can **double-click** and present to a prospect. Paste a customer's TwiML (or pick a curated example) and it shows — live — how much of that Twilio voice app runs on Bandwidth unchanged: a works-as-is / heads-up / no direct equivalent verdict, a migration-complexity score, the translated BXML, and a forwardable report.
 
 No server, no install, no network. It works offline on a plane.
 

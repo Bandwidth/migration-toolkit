@@ -23,7 +23,7 @@ Same concepts, different words — like British vs. American English. Roughly 80
 
 **What it does:** Scans a customer's existing codebase and checks how their TwiML and Twilio SDK usage maps to Bandwidth's BXML.
 
-**Outcome:** Size the migration effort and identify blockers **without writing a line of code**. You get a migration-complexity score and a per-feature *works-as-is / heads-up / blocker* breakdown.
+**Outcome:** Size the migration effort and identify what needs a redesign **without writing a line of code**. You get a migration-complexity score and a per-feature *works-as-is / heads-up / no direct equivalent* breakdown.
 
 ```bash
 npm install
@@ -56,7 +56,7 @@ npm run bxml-generator -- <in-dir> <out-dir>     # writes out/bxml/*, out/MIGRAT
 
 ## Try the Compatibility Check in your browser — no command needed
 
-The **Migration Compatibility Check** is a single, self-contained HTML file a sales engineer can double-click and present to a prospect. Paste a customer's TwiML (or pick a curated example) and it shows — live — a migration-complexity score, a *works-as-is / heads-up / blocker* verdict, the translated BXML, and a forwardable report.
+The **Migration Compatibility Check** is a single, self-contained HTML file a sales engineer can double-click and present to a prospect. Paste a customer's TwiML (or pick a curated example) and it shows — live — a migration-complexity score, a *works-as-is / heads-up / no direct equivalent* verdict, the translated BXML, and a forwardable report.
 
 ```bash
 npm install
