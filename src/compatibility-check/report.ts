@@ -25,7 +25,7 @@ export function renderReport(analyses: FileAnalysis[]): string {
     if (errors.length === 0 && warnings.length === 0)
       lines.push("✅ Runs through the translator as-is.", "");
     if (errors.length) {
-      lines.push("### 🔧 No direct equivalent", "");
+      lines.push("### 🛑 No direct equivalent", "");
       for (const f of errors)
         lines.push(`- **${f.verb}** — ${f.message}${f.docsUrl ? ` ([docs](${f.docsUrl}))` : ""}`);
       lines.push("");

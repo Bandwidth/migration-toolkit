@@ -37,7 +37,7 @@ export function renderMigration(result: GenerateResult): string {
     if (errors.length === 0 && warnings.length === 0)
       lines.push("✅ Translated cleanly.", "");
     if (errors.length) {
-      lines.push("### 🔧 No direct equivalent — needs a human", "");
+      lines.push("### 🛑 No direct equivalent — needs a human", "");
       for (const f of errors)
         lines.push(`- **${f.verb}** — ${f.message}${f.docsUrl ? ` ([docs](${f.docsUrl}))` : ""}`);
       lines.push("");
