@@ -1,5 +1,5 @@
 name: Feature or support request
-description: Ask for new verb/attribute support, a capability, or a change to how the adapter behaves.
+description: Ask for new verb/attribute support, a capability, or a change to how the toolkit behaves.
 title: "[Request]: "
 labels: ["enhancement"]
 body:
@@ -18,7 +18,7 @@ body:
   - type: textarea
     id: proposal
     attributes:
-      label: What would you like the adapter to do?
+      label: What would you like the toolkit to do?
       description: >
         If it's about a specific TwiML verb/attribute or REST call, name it. Translation support is driven by
         `src/matrix/twilio-voice.json`, so pointing at the exact verb/attribute helps.

@@ -1,21 +1,21 @@
 // test/server-readyz.test.ts
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { buildApp, type AdapterConfig, type AdapterDeps } from "../src/server/app.js";
+import { buildApp, type ServerConfig, type ServerDeps } from "../src/server/app.js";
 import { REQUIRED_ENV } from "../src/server/readiness.js";
 
-const config: AdapterConfig = {
+const config: ServerConfig = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   webhookUser: "u",
   webhookPassword: "p",
 };
 
-const deps = (over: Partial<AdapterDeps> = {}): AdapterDeps => ({
+const deps = (over: Partial<ServerDeps> = {}): ServerDeps => ({
   fetchImpl: fetch,
   // minimal bwClient stub; /readyz never calls it (no outbound work at all)
-  bwClient: {} as AdapterDeps["bwClient"],
+  bwClient: {} as ServerDeps["bwClient"],
   ...over,
 });
 

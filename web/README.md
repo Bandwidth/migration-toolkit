@@ -6,7 +6,7 @@ No server, no install, no network. It works offline on a plane.
 
 ## Why it's trustworthy
 
-The page runs the **real translation engine** (`src/translator`, `src/compatibility-check`) and the real compatibility matrix (`src/matrix/twilio-voice.json`) in the browser — the exact same code the live adapter uses. It does not reimplement any translation or scoring logic. Because the same matrix drives the adapter and this page, the verdict shown here provably matches what happens in production. That invariant is the point; don't break it by hand-coding results into the UI.
+The page runs the **real translation engine** (`src/translator`, `src/compatibility-check`) and the real compatibility matrix (`src/matrix/twilio-voice.json`) in the browser — the exact same code the live translator uses. It does not reimplement any translation or scoring logic. Because the same matrix drives the translator and this page, the verdict shown here provably matches what happens in production. That invariant is the point; don't break it by hand-coding results into the UI.
 
 ## Build & run
 

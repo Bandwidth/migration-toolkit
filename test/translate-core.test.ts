@@ -56,10 +56,10 @@ describe("core verb translation", () => {
   });
   it("Redirect text URL → redirectUrl attr, rewritten via option", () => {
     const r = translateTwiml(`<Response><Redirect>/next</Redirect></Response>`, {
-      rewriteUrl: (url) => `https://adapter.test/bw/continue?next=${encodeURIComponent(url)}`,
+      rewriteUrl: (url) => `https://translator.test/bw/continue?next=${encodeURIComponent(url)}`,
     });
     expect(r.bxml).toContain(
-      `<Redirect redirectUrl="https://adapter.test/bw/continue?next=%2Fnext"/>`,
+      `<Redirect redirectUrl="https://translator.test/bw/continue?next=%2Fnext"/>`,
     );
   });
   it("unknown verb yields error finding and no output element", () => {

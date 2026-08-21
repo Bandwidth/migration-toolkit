@@ -11,7 +11,7 @@ import { translateTwiml } from "../src/translator/translate.js";
 describe("latency: TwiML→BXML translation tax", () => {
   it("p99 stays under 5 ms per turn across the verb surface", () => {
     const rewriteUrl = (u: string) =>
-      `https://adapter.example/bw/continue?next=${encodeURIComponent(u)}`;
+      `https://translator.example/bw/continue?next=${encodeURIComponent(u)}`;
     const corpus = [
       `<Response><Say voice="alice">Thanks for calling. Goodbye.</Say><Hangup/></Response>`,
       `<Response><Gather numDigits="1" action="/menu" method="POST"><Say>For sales press 1. For support press 2.</Say></Gather><Redirect>/welcome</Redirect></Response>`,

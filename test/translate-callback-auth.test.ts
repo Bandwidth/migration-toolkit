@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { translateTwiml } from "../src/translator/translate.js";
 
 const auth = { username: "bw-user", password: "bw-pass" };
-const rewriteUrl = (u: string) => `https://adapter.test/bw/continue?next=${encodeURIComponent(u)}`;
+const rewriteUrl = (u: string) => `https://translator.test/bw/continue?next=${encodeURIComponent(u)}`;
 
 describe("callback auth stamping", () => {
   it("adds username/password to a Gather that has a rewritten action", () => {

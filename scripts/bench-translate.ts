@@ -1,4 +1,4 @@
-// Micro-benchmark for the TwiML→BXML translation tax — the latency the adapter
+// Micro-benchmark for the TwiML→BXML translation tax — the latency the translator
 // itself adds per IVR turn, with the customer-webhook network hop factored out.
 //
 // The live path (src/server/app.ts `fetchAndTranslate`) is `postToCustomer()`
@@ -12,9 +12,9 @@
 import { translateTwiml } from "../src/translator/translate.js";
 
 const rewriteUrl = (u: string) =>
-  `https://adapter.example/bw/continue?next=${encodeURIComponent(u)}`;
+  `https://translator.example/bw/continue?next=${encodeURIComponent(u)}`;
 
-// Representative TwiML spanning the verb surface the adapter translates, from a
+// Representative TwiML spanning the verb surface the translator translates, from a
 // trivial greeting to a composite document exercising several verbs at once.
 const CORPUS: { name: string; twiml: string }[] = [
   {
@@ -109,6 +109,6 @@ console.log(
   `${pad("ALL", 16)}${padL("", 7)}${padL(fmt(overallMean), 11)}${padL(fmt(pct(allDurations, 0.5)), 11)}${padL(fmt(pct(allDurations, 0.99)), 11)}${padL(fmt(allDurations[allDurations.length - 1]), 11)}`,
 );
 console.log(
-  `\nThis is the adapter's per-turn translation tax (CPU only). The customer ` +
+  `\nThis is the translator's per-turn translation tax (CPU only). The customer ` +
     `webhook round-trip is separate and not measured here.`,
 );

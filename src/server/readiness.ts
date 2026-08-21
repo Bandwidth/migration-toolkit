@@ -1,7 +1,7 @@
-/** Env vars the adapter server requires to start and serve calls. */
+/** Env vars the translator server requires to start and serve calls. */
 export const REQUIRED_ENV = [
-  "ADAPTER_ACCOUNT_SID",
-  "ADAPTER_AUTH_TOKEN",
+  "TRANSLATOR_ACCOUNT_SID",
+  "TRANSLATOR_AUTH_TOKEN",
   "PUBLIC_BASE_URL",
   "CUSTOMER_VOICE_URL",
   "BW_ACCOUNT_ID",
@@ -20,7 +20,7 @@ export interface ReadinessReport {
 }
 
 /**
- * Report whether the adapter is configured to serve calls. Pure over its
+ * Report whether the translator is configured to serve calls. Pure over its
  * inputs: pass `env` (usually process.env) and an optional `probeToken` that
  * attempts a live Bandwidth OAuth2 token exchange.
  */

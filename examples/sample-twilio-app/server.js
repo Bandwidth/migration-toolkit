@@ -7,7 +7,7 @@ app.use(express.urlencoded({ extended: false }));
 app.post("/voice", (req, res) => {
   const vr = new twiml.VoiceResponse();
   const gather = vr.gather({ numDigits: 1, action: "/menu", method: "POST" });
-  gather.say("Welcome to the Bandwidth adapter demo. Press 1 for sales. Press 2 to leave a message.");
+  gather.say("Welcome to the Bandwidth translator demo. Press 1 for sales. Press 2 to leave a message.");
   vr.say("We did not receive input. Goodbye.");
   res.type("text/xml").send(vr.toString());
 });
