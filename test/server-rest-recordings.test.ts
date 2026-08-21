@@ -6,7 +6,7 @@ import type { CreateCallOpts, BwRecording } from "../src/bw/client.js";
 const config = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   webhookUser: "u",
   webhookPassword: "p",
@@ -108,7 +108,7 @@ describe("GET /2010-04-01/Accounts/:sid/Calls/:callSid/Recordings.json", () => {
 });
 
 describe("GET /2010-04-01/Accounts/:sid/Recordings/:recordingSid", () => {
-  // List first so the adapter learns recordingSid -> (callId, recordingId).
+  // List first so the translator learns recordingSid -> (callId, recordingId).
   async function listThenRecordingSid(app: ReturnType<typeof makeApp>["app"]) {
     const callSid = await createCall(app);
     const list = await app.inject({

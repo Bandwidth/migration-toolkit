@@ -87,7 +87,7 @@ npm run doctor     # readiness check — see AGENTS.md Phase 5
 
 | Env var | Meaning |
 |---|---|
-| `ADAPTER_ACCOUNT_SID` / `ADAPTER_AUTH_TOKEN` | What the customer's Twilio SDK + webhook-signature validation use |
+| `TRANSLATOR_ACCOUNT_SID` / `TRANSLATOR_AUTH_TOKEN` | What the customer's Twilio SDK + webhook-signature validation use |
 | `WEBHOOK_USER` / `WEBHOOK_PASSWORD` | Basic-auth creds Bandwidth presents on inbound `/bw/*` webhooks; set the same as your Voice app's `CallbackCreds` |
 | `HOST` | Listen interface (default `127.0.0.1`); set `0.0.0.0` for containers/exposed deployments |
 | `EGRESS_ALLOW_PRIVATE` | Set `1` to allow outbound fetches to private/loopback ranges (local dev only) |
@@ -96,8 +96,8 @@ npm run doctor     # readiness check — see AGENTS.md Phase 5
 | `CUSTOMER_VOICE_URL` | The customer's Twilio voice webhook (inbound calls) |
 | `BW_ACCOUNT_ID` / `BW_CLIENT_ID` / `BW_CLIENT_SECRET` / `BW_APPLICATION_ID` | Bandwidth credentials (OAuth2 client-credentials), provisioned via `band` — see [`AGENTS.md`](AGENTS.md) |
 | `BW_ENVIRONMENT` | Optional — `test` targets BW's test hosts; defaults to `prod` |
-| `ADAPTER_CAPTURE_DIR` | Optional — dir to persist each customer TwiML response (verbatim, content-addressed) so the BXML Generator can turn the paths a test call exercised into standalone BXML. Essential for SDK-built apps with no static TwiML to transpile. Off by default |
-| `ADAPTER_LOG=1` | Optional — enable request logging |
+| `TRANSLATOR_CAPTURE_DIR` | Optional — dir to persist each customer TwiML response (verbatim, content-addressed) so the BXML Generator can turn the paths a test call exercised into standalone BXML. Essential for SDK-built apps with no static TwiML to transpile. Off by default |
+| `TRANSLATOR_LOG=1` | Optional — enable request logging |
 
 Run `npm run doctor` (or `GET /readyz?deep=1` once the server is up) to confirm
 this env is set and the Bandwidth OAuth2 token exchange works before routing

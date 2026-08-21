@@ -1,5 +1,5 @@
 name: Bug report
-description: Something the adapter got wrong — a bad translation, an unexpected failure, or a crash.
+description: Something the toolkit got wrong — a bad translation, an unexpected failure, or a crash.
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -22,7 +22,7 @@ body:
     attributes:
       label: What happened vs. what you expected
       description: >
-        Include the adapter's output. When it can't do something, it's designed to say so and stop
+        Include the toolkit's output. When it can't do something, it's designed to say so and stop
         rather than fail silently — paste that message if you got one.
     validations:
       required: true
@@ -38,9 +38,9 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Adapter version/commit, Node version, and whether you're hitting real Bandwidth or a test setup.
+      description: Toolkit version/commit, Node version, and whether you're hitting real Bandwidth or a test setup.
       value: |
-        - Adapter version/commit:
+        - Toolkit version/commit:
         - Node version:
         - Target: real Bandwidth / test setup
     validations:

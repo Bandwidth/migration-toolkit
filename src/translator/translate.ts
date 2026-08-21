@@ -165,7 +165,7 @@ function mapVoice(twilioVoice: string): string | null {
   return null; // unrecognized — drop rather than break the call
 }
 
-// Attrs that carry a rewritten adapter callback URL (Bandwidth will hit these
+// Attrs that carry a rewritten translator callback URL (Bandwidth will hit these
 // endpoints directly, so they need Basic-auth creds matching the app's CallbackCreds).
 const CALLBACK_URL_ATTRS = [
   "gatherUrl",
@@ -177,7 +177,7 @@ const CALLBACK_URL_ATTRS = [
 ] as const;
 
 /** Walks the built element tree and stamps username/password onto any element
- *  carrying a rewritten adapter callback URL, so Bandwidth Basic-auths the
+ *  carrying a rewritten translator callback URL, so Bandwidth Basic-auths the
  *  continuation request instead of hitting it unauthenticated. */
 function stampCallbackAuth(els: XmlEl[], auth: { username: string; password: string }): void {
   for (const el of els) {
@@ -217,7 +217,7 @@ function unsupported(node: TwimlNode, findings: Finding[], detail?: string): nul
   findings.push({
     severity: "error",
     verb: node.name,
-    message: detail ?? m?.notes ?? `TwiML <${node.name}> has no Bandwidth equivalent in the adapter.`,
+    message: detail ?? m?.notes ?? `TwiML <${node.name}> has no Bandwidth equivalent in the translator.`,
     docsUrl: m?.docsUrl,
   });
   return null;
@@ -388,7 +388,7 @@ function translateGather(
   else
     warn(
       "Gather",
-      "Gather without an action attribute re-requests the current document URL on Twilio; set an explicit action for identical behavior through the adapter.",
+      "Gather without an action attribute re-requests the current document URL on Twilio; set an explicit action for identical behavior through the translator.",
       findings,
     );
   const children: XmlEl[] = [];
@@ -410,7 +410,7 @@ function translateRecord(
   };
   if (node.attrs.action) attrs.recordCompleteUrl = rewrite(node.attrs.action, "record");
   // Twilio's async "recording is ready" webhook (recordingStatusCallback) maps to
-  // Bandwidth's recordingAvailableUrl. The adapter receives the BW event, reshapes
+  // Bandwidth's recordingAvailableUrl. The translator receives the BW event, reshapes
   // it into Twilio recording-callback params, and forwards it to the customer.
   if (node.attrs.recordingStatusCallback)
     attrs.recordingAvailableUrl = rewrite(node.attrs.recordingStatusCallback, "recordingStatus");
@@ -420,7 +420,7 @@ function translateRecord(
   )
     warn(
       "Record",
-      "recordingStatusCallbackMethod=GET is not honored; the adapter forwards recording events via POST.",
+      "recordingStatusCallbackMethod=GET is not honored; the translator forwards recording events via POST.",
       findings,
     );
   if (node.attrs.transcribe === "true")
@@ -487,7 +487,7 @@ function translateDial(
     if (child.name === "Number") targets.push({ name: "PhoneNumber", children: [child.text] });
     else if (child.name === "Sip") targets.push({ name: "SipUri", children: [child.text] });
     else
-      return unsupported(child, findings, `Dial noun <${child.name}> is not supported by the adapter.`);
+      return unsupported(child, findings, `Dial noun <${child.name}> is not supported by the translator.`);
   }
   if (targets.length === 0 && node.text) targets.push({ name: "PhoneNumber", children: [node.text] });
   if (targets.length === 0) return unsupported(node, findings, "Dial with no target.");
@@ -497,7 +497,7 @@ function translateDial(
     "Child-call status propagation is not fully replicated in P0; validate call-progress behavior.",
     findings,
   );
-  // Twilio Dial attributes the adapter cannot map to BXML Transfer. Surfacing
+  // Twilio Dial attributes the translator cannot map to BXML Transfer. Surfacing
   // each one explicitly (rather than dropping it silently) is the product's
   // no-silent-degradation contract — the customer learns exactly what won't carry over.
   for (const [attr, message] of Object.entries(UNSUPPORTED_DIAL_ATTRS)) {
@@ -571,7 +571,7 @@ function translateConnect(
     return unsupported(
       node,
       findings,
-      `Connect noun <${node.children[0]?.name ?? "?"}> is not supported (ConversationRelay/VirtualAgent are out of adapter scope).`,
+      `Connect noun <${node.children[0]?.name ?? "?"}> is not supported (ConversationRelay/VirtualAgent are out of translator scope).`,
     );
   return streamToStartStream(stream, "bidirectional", findings, rewrite);
 }
@@ -602,7 +602,7 @@ function translateStop(node: TwimlNode, findings: Finding[]): XmlEl[] | null {
   return unsupported(
     node,
     findings,
-    `Stop noun <${node.children[0]?.name ?? "?"}> is not supported by the adapter.`,
+    `Stop noun <${node.children[0]?.name ?? "?"}> is not supported by the translator.`,
   );
 }
 
@@ -645,7 +645,7 @@ function translateStart(
     return unsupported(
       node,
       findings,
-      `Start noun <${node.children[0]?.name ?? "?"}> is not supported by the adapter.`,
+      `Start noun <${node.children[0]?.name ?? "?"}> is not supported by the translator.`,
     );
 
   warn(

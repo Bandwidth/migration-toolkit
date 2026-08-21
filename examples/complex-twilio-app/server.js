@@ -1,5 +1,5 @@
 // "Acme Health" contact center — a realistic, feature-heavy Twilio voice app.
-// Unmodified Twilio SDK. Exercises the full spread of TwiML the adapter cares
+// Unmodified Twilio SDK. Exercises the full spread of TwiML the translator cares
 // about: the parts that migrate clean AND the parts that must fail loudly.
 const express = require("express");
 const { twiml } = require("twilio");

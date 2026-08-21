@@ -20,7 +20,7 @@ cd examples/sample-twilio-app && npm install && npm start
 Terminal B — the translator:
 
 ```bash
-ADAPTER_ACCOUNT_SID=AC123 ADAPTER_AUTH_TOKEN=demo \
+TRANSLATOR_ACCOUNT_SID=AC123 TRANSLATOR_AUTH_TOKEN=demo \
 PUBLIC_BASE_URL=http://localhost:3000 \
 CUSTOMER_VOICE_URL=http://localhost:4000/voice \
 BW_ACCOUNT_ID=x BW_CLIENT_ID=x BW_CLIENT_SECRET=x BW_APPLICATION_ID=x \
@@ -58,7 +58,7 @@ Expected: BXML containing `<Transfer>` to the sales number.
 
 Provisioning checklist: BW test account with Voice API enabled, a sub-account/
 site, 2–3 voice-enabled numbers, a Voice application pointed at the public
-adapter URL (`/bw/initiate`), and a public HTTPS tunnel (ngrok) or small host.
+translator URL (`/bw/initiate`), and a public HTTPS tunnel (ngrok) or small host.
 (A SIP peer is only needed on the legacy platform; the default Universal
 Platform path uses a VCP instead — see `AGENTS.md` Phase 2.) Call the BW number,
 walk the IVR by ear. Then exercise outbound via the REST facade with the real
@@ -73,7 +73,7 @@ P0 exit criteria for the live milestone:
 ## 4. Callbacks
 
 These layer on top of the loop above and can be shown with no credentials.
-Number provisioning is not part of this adapter — it's handled by the `band`
+Number provisioning is not part of this translator — it's handled by the `band`
 CLI; see the Phase 2 runbook in [`AGENTS.md`](../AGENTS.md).
 
 Add a stand-in for the customer's callback receiver:
@@ -115,13 +115,13 @@ client.calls.create({
 ```
 
 Hang up the call; when Bandwidth posts the disconnect to `/bw/disconnect`, the
-adapter fires a signed Twilio `completed` callback (`CallStatus=completed`,
+translator fires a signed Twilio `completed` callback (`CallStatus=completed`,
 `CallDuration`, `CallSid`) to that URL. No-telephony proof:
 `npx vitest run test/server-status-callback.test.ts`.
 
 ### 4c. Number provisioning — now via `band`
 
-Number search/order/activate used to be served through this adapter's own
+Number search/order/activate used to be served through this translator's own
 REST facade; that surface has been removed in favor of the `band` CLI, which
 is the account-side tool of record. To demo provisioning, run the Phase 2
 commands from [`AGENTS.md`](../AGENTS.md) (`band number search`, `band number

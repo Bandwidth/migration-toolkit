@@ -147,7 +147,7 @@ describe("Start > Transcription → StartTranscription", () => {
   });
 
   it("Start with unsupported noun produces an error", () => {
-    // Siprec is a real Twilio <Start> noun the adapter does not map (Stream and
+    // Siprec is a real Twilio <Start> noun the translator does not map (Stream and
     // Transcription under <Start> ARE supported).
     const r = translateTwiml(`<Response><Start><Siprec name="s1"/></Start></Response>`);
     expect(r.hasErrors).toBe(true);
@@ -224,15 +224,15 @@ describe("SpeakSentence voice mapping – expanded BW voice allowlist", () => {
 
 // ─── Refer → Refer (SIP REFER) ───────────────────────────────────────────────
 describe("Refer → Refer", () => {
-  const rewrite = { rewriteUrl: (u: string) => `https://adapter.test/bw/continue?next=${encodeURIComponent(u)}` };
+  const rewrite = { rewriteUrl: (u: string) => `https://translator.test/bw/continue?next=${encodeURIComponent(u)}` };
 
-  it("maps <Refer><Sip> to BW <Refer><SipUri> with referCompleteUrl rewritten through the adapter", () => {
+  it("maps <Refer><Sip> to BW <Refer><SipUri> with referCompleteUrl rewritten through the translator", () => {
     const r = translateTwiml(
       `<Response><Refer action="/refer-done" method="POST"><Sip>sip:alice@atlanta.example.com</Sip></Refer></Response>`,
       rewrite,
     );
     expect(r.bxml).toContain(`<SipUri>sip:alice@atlanta.example.com</SipUri>`);
-    expect(r.bxml).toContain(`referCompleteUrl="https://adapter.test/bw/continue?next=`);
+    expect(r.bxml).toContain(`referCompleteUrl="https://translator.test/bw/continue?next=`);
     expect(r.bxml).toContain(`referCompleteMethod="POST"`);
     expect(r.hasErrors).toBe(false);
   });

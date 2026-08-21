@@ -6,5 +6,5 @@ contact_links:
       For guaranteed, SLA-backed support on a production voice migration, talk to your Bandwidth
       account team — this repo is best-effort and community-supported.
   - name: How to contribute
-    url: https://github.com/Bandwidth/bw-voice-adapter/blob/main/CONTRIBUTING.md
+    url: https://github.com/Bandwidth/migration-toolkit/blob/main/CONTRIBUTING.md
     about: Read the contributing guide before opening an issue or PR.

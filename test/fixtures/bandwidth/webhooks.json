@@ -2,7 +2,7 @@
   "_meta": {
     "captured": "2026-06-10",
     "source": "live Bandwidth voice webhook (app callInitiatedCallbackUrl) via cloudflared tunnel on a real provisioned number",
-    "note": "Content-Type application/json (NOT form-encoded). No signature header \u2014 BW voice webhooks are not HMAC-signed like Twilio's. Confirms adapter /bw/initiate field names: eventType, callId, from, to, direction.",
+    "note": "Content-Type application/json (NOT form-encoded). No signature header \u2014 BW voice webhooks are not HMAC-signed like Twilio's. Confirms translator /bw/initiate field names: eventType, callId, from, to, direction.",
     "redacted": [
       "accountId",
       "applicationId",

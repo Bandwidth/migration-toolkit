@@ -6,8 +6,8 @@ import type { CreateCallOpts } from "../src/bw/client.js";
 // Kind-aware rewriter mirroring the one in src/server/app.ts.
 const rw = (url: string, kind: UrlKind) =>
   kind === "recordingStatus"
-    ? `https://adapter.test/bw/recording-status?cb=${encodeURIComponent(url)}`
-    : `https://adapter.test/bw/continue?next=${encodeURIComponent(url)}`;
+    ? `https://translator.test/bw/recording-status?cb=${encodeURIComponent(url)}`
+    : `https://translator.test/bw/continue?next=${encodeURIComponent(url)}`;
 
 describe("Record recordingStatusCallback → recordingAvailableUrl", () => {
   it("maps the async recording callback onto Bandwidth's recordingAvailableUrl", () => {
@@ -15,9 +15,9 @@ describe("Record recordingStatusCallback → recordingAvailableUrl", () => {
       `<Response><Record action="/done" recordingStatusCallback="/rec-ready"/></Response>`,
       { rewriteUrl: rw },
     );
-    expect(r.bxml).toContain(`recordCompleteUrl="https://adapter.test/bw/continue?next=%2Fdone"`);
+    expect(r.bxml).toContain(`recordCompleteUrl="https://translator.test/bw/continue?next=%2Fdone"`);
     expect(r.bxml).toContain(
-      `recordingAvailableUrl="https://adapter.test/bw/recording-status?cb=%2Frec-ready"`,
+      `recordingAvailableUrl="https://translator.test/bw/recording-status?cb=%2Frec-ready"`,
     );
     expect(r.hasErrors).toBe(false);
   });
@@ -34,7 +34,7 @@ describe("Record recordingStatusCallback → recordingAvailableUrl", () => {
 const config = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   allowPrivateEgress: true,
   webhookUser: "u",
@@ -94,9 +94,9 @@ describe("POST /bw/recording-status (recording-available egress)", () => {
     expect(body.get("RecordingStatus")).toBe("completed");
     expect(body.get("RecordingDuration")).toBe("12");
     expect(body.get("CallSid")).toMatch(/^CA[0-9a-f]{32}$/);
-    // RecordingUrl points back at the adapter's own facade, not Bandwidth.
+    // RecordingUrl points back at the translator's own facade, not Bandwidth.
     expect(body.get("RecordingUrl")).toContain(
-      "https://adapter.test/2010-04-01/Accounts/AC123/Recordings/RE",
+      "https://translator.test/2010-04-01/Accounts/AC123/Recordings/RE",
     );
     expect((init.headers as Record<string, string>)["X-Twilio-Signature"]).toBeTruthy();
   });

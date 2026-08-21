@@ -4,7 +4,7 @@ import { buildApp } from "../src/server/app.js";
 const config = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   webhookUser: "bw-user",
   webhookPassword: "bw-pass",

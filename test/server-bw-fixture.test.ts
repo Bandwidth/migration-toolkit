@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { buildApp } from "../src/server/app.js";
 
 // The real Bandwidth initiate webhook, captured live (test/fixtures/bandwidth/
-// webhooks.json). Carries extra fields beyond what the adapter reads
+// webhooks.json). Carries extra fields beyond what the translator reads
 // (privacy, applicationId, accountId, startTime, eventTime, callUrl,
 // callerDisplayName). This proves those extras don't break the inbound path.
 const bwFixture = JSON.parse(
@@ -21,7 +21,7 @@ describe("inbound path against the real captured BW initiate payload", () => {
       {
         accountSid: "ACtest",
         authToken: "tok",
-        publicBaseUrl: "https://adapter.test",
+        publicBaseUrl: "https://translator.test",
         voiceUrl: "https://customer.test/voice",
         allowPrivateEgress: true,
         webhookUser: "u",

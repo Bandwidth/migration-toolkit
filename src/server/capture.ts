@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 /**
- * Persist a raw TwiML response the adapter fetched from the customer app, so a
+ * Persist a raw TwiML response the translator fetched from the customer app, so a
  * later `npm run bxml-generator` over the capture dir can turn the paths a test call
  * actually exercised into standalone BXML.
  *

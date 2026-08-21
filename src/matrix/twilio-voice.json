@@ -69,15 +69,15 @@
     "Record": {
       "bxml": "Record",
       "status": "supported",
-      "notes": "Recording callback payloads differ; adapter normalizes.",
+      "notes": "Recording callback payloads differ; translator normalizes.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/record",
       "attributes": {
         "action": { "bxml": "recordCompleteUrl", "status": "supported" },
-        "recordingStatusCallback": { "bxml": "recordingAvailableUrl", "status": "supported", "notes": "Async 'recording ready' webhook. Adapter receives the BW recordingAvailableUrl event, reshapes it into Twilio recordingStatusCallback params, and forwards it; RecordingUrl points back at the adapter's recording facade. recordingStatusCallbackMethod=GET is not honored (forwarded via POST)." },
+        "recordingStatusCallback": { "bxml": "recordingAvailableUrl", "status": "supported", "notes": "Async 'recording ready' webhook. Translator receives the BW recordingAvailableUrl event, reshapes it into Twilio recordingStatusCallback params, and forwards it; RecordingUrl points back at the translator's recording facade. recordingStatusCallbackMethod=GET is not honored (forwarded via POST)." },
         "maxLength": { "bxml": "maxDuration", "status": "supported" },
         "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
         "transcribe": { "bxml": "transcribe", "status": "partial", "notes": "Engine and callback shape differ." },
-        "playBeep": { "bxml": null, "status": "partial", "notes": "No direct equivalent; adapter can prepend a beep PlayAudio later." }
+        "playBeep": { "bxml": null, "status": "partial", "notes": "No direct equivalent; translator can prepend a beep PlayAudio later." }
       }
     },
     "Dial": {
@@ -124,13 +124,13 @@
     "Pay": {
       "bxml": null,
       "status": "unsupported",
-      "notes": "PCI payment capture is out of scope for the adapter.",
+      "notes": "PCI payment capture is out of scope for the translator.",
       "attributes": {}
     },
     "Refer": {
       "bxml": "Refer",
       "status": "partial",
-      "notes": "Twilio <Refer><Sip> maps to BW <Refer><SipUri>. action maps to referCompleteUrl (rewritten through the adapter so the Refer-complete callback returns translated BXML); method maps to referCompleteMethod. Bandwidth honors Refer only on inbound SIP URI calls — a PSTN call leg cannot be REFER'd — so this is partial by platform constraint, not a translation gap. A Refer without a <Sip> child fails loudly (BW Refer accepts only a SIP URI).",
+      "notes": "Twilio <Refer><Sip> maps to BW <Refer><SipUri>. action maps to referCompleteUrl (rewritten through the translator so the Refer-complete callback returns translated BXML); method maps to referCompleteMethod. Bandwidth honors Refer only on inbound SIP URI calls — a PSTN call leg cannot be REFER'd — so this is partial by platform constraint, not a translation gap. A Refer without a <Sip> child fails loudly (BW Refer accepts only a SIP URI).",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/programmable-voice/bxml/refer/",
       "attributes": {
         "action": { "bxml": "referCompleteUrl", "status": "supported" },
@@ -147,7 +147,7 @@
     "Stream": {
       "bxml": "StartStream",
       "status": "partial",
-      "notes": "Twilio WS message schema is emulated by the adapter's stream bridge; live Bandwidth-side binding requires fixture capture.",
+      "notes": "Twilio WS message schema is emulated by the translator's stream bridge; live Bandwidth-side binding requires fixture capture.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/startStream",
       "attributes": {}
     },
@@ -189,7 +189,7 @@
     "Client": {
       "bxml": null,
       "status": "unsupported",
-      "notes": "Twilio Client (WebRTC) endpoints have no adapter mapping in P0.",
+      "notes": "Twilio Client (WebRTC) endpoints have no translator mapping in P0.",
       "attributes": {}
     }
   }
