@@ -22,7 +22,7 @@ export function renderMigration(result: GenerateResult): string {
     "# Twilio → Bandwidth migration — generated BXML",
     "",
     `Translated **${docs.length}** TwiML document${docs.length === 1 ? "" : "s"} to native BXML` +
-      ` (${clean} clean, ${withBlockers} with blockers).`,
+      ` (${clean} clean, ${withBlockers} with verbs that have no direct equivalent).`,
     "",
     "Generated BXML is written under `bxml/`. Action/redirect URLs are preserved",
     "exactly as your Twilio app used them — point those endpoints at your migrated",
@@ -37,7 +37,7 @@ export function renderMigration(result: GenerateResult): string {
     if (errors.length === 0 && warnings.length === 0)
       lines.push("✅ Translated cleanly.", "");
     if (errors.length) {
-      lines.push("### 🛑 Blockers — need a human", "");
+      lines.push("### 🛑 No direct equivalent — needs a human", "");
       for (const f of errors)
         lines.push(`- **${f.verb}** — ${f.message}${f.docsUrl ? ` ([docs](${f.docsUrl}))` : ""}`);
       lines.push("");

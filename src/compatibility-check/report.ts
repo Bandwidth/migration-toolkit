@@ -13,7 +13,7 @@ export function renderReport(analyses: FileAnalysis[]): string {
   const lines: string[] = [
     "# Twilio → Bandwidth migration — Compatibility Check",
     "",
-    `**Migration complexity: ${score}/10** (1 + warnings + 3×blockers, capped at 10)`,
+    `**Migration complexity: ${score}/10** (1 + heads-up + 3× no-equivalent, capped at 10)`,
     "",
     `Files with Twilio voice usage: ${relevant.length}`,
     "",
@@ -25,7 +25,7 @@ export function renderReport(analyses: FileAnalysis[]): string {
     if (errors.length === 0 && warnings.length === 0)
       lines.push("✅ Runs through the translator as-is.", "");
     if (errors.length) {
-      lines.push("### 🛑 Blockers", "");
+      lines.push("### 🛑 No direct equivalent", "");
       for (const f of errors)
         lines.push(`- **${f.verb}** — ${f.message}${f.docsUrl ? ` ([docs](${f.docsUrl}))` : ""}`);
       lines.push("");
