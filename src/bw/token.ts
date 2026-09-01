@@ -1,3 +1,5 @@
+import { USER_AGENT } from "./user-agent.js";
+
 export interface TokenManagerOpts {
   clientId: string;
   clientSecret: string;
@@ -40,7 +42,11 @@ export class TokenManager {
     const basic = "Basic " + Buffer.from(`${this.opts.clientId}:${this.opts.clientSecret}`).toString("base64");
     const res = await this.fetchImpl(`${this.opts.apiHost}/api/v1/oauth2/token`, {
       method: "POST",
-      headers: { Authorization: basic, "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        Authorization: basic,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": USER_AGENT,
+      },
       body: "grant_type=client_credentials",
     });
     if (!res.ok)
