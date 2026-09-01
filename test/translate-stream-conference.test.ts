@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { translateTwiml } from "../src/translator/translate.js";
 
 const rw = (u: string) =>
-  u.startsWith("wss") ? `wss://adapter.test/streams?dest=${encodeURIComponent(u)}` : u;
+  u.startsWith("wss") ? `wss://translator.test/streams?dest=${encodeURIComponent(u)}` : u;
 
 describe("Stream lifecycle", () => {
   it("Connect>Stream → StartStream mode=bidirectional with name and tracks", () => {

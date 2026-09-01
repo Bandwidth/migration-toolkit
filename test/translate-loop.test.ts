@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { translateTwiml } from "../src/translator/translate.js";
 
 // Twilio's loop="N" repeats a <Say>/<Play>. BXML has no loop attribute, so the
-// adapter expands a finite count into repeated verbs. loop="0" (infinite) and
+// translator expands a finite count into repeated verbs. loop="0" (infinite) and
 // invalid counts can't be expressed inline, so they fall back to a single play
 // plus a warning (no silent degradation).
 describe("Say loop", () => {

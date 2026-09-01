@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Conformance check: validate the adapter's BXML output against the official
+# Conformance check: validate the translator's BXML output against the official
 # Bandwidth CLI (`band`). Two levels:
 #   1. well-formedness — `band bxml raw` returns non-zero on malformed XML
 #   2. (manual) schema — compare our verb/attribute names against the canonical

@@ -11,15 +11,15 @@ const bwEnv = process.env.BW_ENVIRONMENT === "test" ? "test" : "prod";
 
 const app = buildApp(
   {
-    accountSid: env("ADAPTER_ACCOUNT_SID"),
-    authToken: env("ADAPTER_AUTH_TOKEN"),
+    accountSid: env("TRANSLATOR_ACCOUNT_SID"),
+    authToken: env("TRANSLATOR_AUTH_TOKEN"),
     publicBaseUrl: env("PUBLIC_BASE_URL"),
     voiceUrl: env("CUSTOMER_VOICE_URL"),
     webhookUser: env("WEBHOOK_USER"),
     webhookPassword: env("WEBHOOK_PASSWORD"),
     allowPrivateEgress: process.env.EGRESS_ALLOW_PRIVATE === "1",
     egressAllowHosts: process.env.EGRESS_ALLOW_HOSTS?.split(",").map((s) => s.trim()).filter(Boolean),
-    captureDir: process.env.ADAPTER_CAPTURE_DIR,
+    captureDir: process.env.TRANSLATOR_CAPTURE_DIR,
   },
   {
     fetchImpl: fetch,
@@ -35,4 +35,4 @@ const app = buildApp(
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "127.0.0.1";
-app.listen({ port, host }).then(() => console.log(`adapter listening on ${host}:${port}`));
+app.listen({ port, host }).then(() => console.log(`translator listening on ${host}:${port}`));

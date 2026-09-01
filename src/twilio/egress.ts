@@ -80,7 +80,7 @@ export function statusParams(
 /**
  * Twilio recording status callback params. This is a leaner payload than the
  * voice webhooks (no geo block) — it carries the recording identity plus the
- * call it belongs to. RecordingUrl points back at the adapter's own recording
+ * call it belongs to. RecordingUrl points back at the translator's own recording
  * facade so the customer's existing fetch-by-URL code resolves through us.
  */
 export function recordingStatusParams(

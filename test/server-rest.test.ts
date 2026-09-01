@@ -5,7 +5,7 @@ import type { CreateCallOpts } from "../src/bw/client.js";
 const config = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   webhookUser: "u",
   webhookPassword: "p",
@@ -27,7 +27,7 @@ describe("POST /2010-04-01/Accounts/:sid/Calls.json", () => {
   }
   const auth = "Basic " + Buffer.from("AC123:tok").toString("base64");
 
-  it("creates a BW call with adapter answerUrl and returns Twilio-shaped JSON", async () => {
+  it("creates a BW call with translator answerUrl and returns Twilio-shaped JSON", async () => {
     const { app, bwClient } = makeApp();
     const res = await app.inject({
       method: "POST",
@@ -51,7 +51,7 @@ describe("POST /2010-04-01/Accounts/:sid/Calls.json", () => {
     const callArgs = bwClient.createCall.mock.calls[0][0];
     expect(callArgs.to).toBe("+15552223333");
     expect(callArgs.answerUrl).toBe(
-      `https://adapter.test/bw/initiate?voiceUrl=${encodeURIComponent("https://customer.test/outbound")}`,
+      `https://translator.test/bw/initiate?voiceUrl=${encodeURIComponent("https://customer.test/outbound")}`,
     );
   });
 

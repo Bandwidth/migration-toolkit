@@ -58,11 +58,11 @@ describe("Connect/Stream", () => {
       `<Response><Connect><Stream url="wss://bot.test/audio"/></Connect></Response>`,
       {
         rewriteUrl: (u, k) =>
-          k === "stream" ? `wss://adapter.test/streams?dest=${encodeURIComponent(u)}` : u,
+          k === "stream" ? `wss://translator.test/streams?dest=${encodeURIComponent(u)}` : u,
       },
     );
     expect(r.bxml).toContain(
-      `<StartStream destination="wss://adapter.test/streams?dest=wss%3A%2F%2Fbot.test%2Faudio"`,
+      `<StartStream destination="wss://translator.test/streams?dest=wss%3A%2F%2Fbot.test%2Faudio"`,
     );
     expect(r.findings.some((f) => f.severity === "warning" && f.verb === "Stream")).toBe(true);
   });

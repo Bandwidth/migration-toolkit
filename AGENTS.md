@@ -1,6 +1,6 @@
-# AGENTS.md — Driving a Twilio→Bandwidth cutover with this adapter
+# AGENTS.md — Driving a Twilio→Bandwidth cutover with this toolkit
 
-This adapter translates a **live call flow** (Twilio TwiML ⇄ Bandwidth BXML) so a
+This toolkit's **Real-Time Translator** translates a live call flow (Twilio TwiML ⇄ Bandwidth BXML) so a
 customer's existing Twilio voice app runs over Bandwidth with a single URL change.
 It does **not** provision anything on a Bandwidth account.
 
@@ -8,18 +8,18 @@ It does **not** provision anything on a Bandwidth account.
 
 Use two tools together:
 
-- **This adapter** — translates the call flow and proxies live calls.
+- **This toolkit's Real-Time Translator** — translates the call flow and proxies live calls.
 - **The `band` CLI** — executes account-side actions on the user's Bandwidth
   account (numbers, applications, service activation). `band` is agent-native:
   JSON output by default, `--plain` for stable parsing, `--wait` for async ops,
   `--if-not-exists` for idempotency.
 
-An agent runs `band` to provision, then configures and runs this adapter.
+An agent runs `band` to provision, then configures and runs the translator.
 
 ## What an agent can and cannot do
 
 **Can do unattended:** compatibility-check analysis, provisioning on an *existing*
-Bandwidth account via `band`, adapter configuration, and the readiness check.
+Bandwidth account via `band`, translator configuration, and the readiness check.
 
 **🧍 Human required** (flagged inline below): creating a brand-new Bandwidth
 account, enabling the account "HTTP Voice" feature, providing a public HTTPS
@@ -57,19 +57,19 @@ email/SMS OTP first. If `band app create` errors that the account lacks the "HTT
 Voice" feature, a human must request it from Bandwidth support — the CLI cannot
 enable it.
 
-### Phase 3 — Configure the adapter
+### Phase 3 — Configure the translator
 Set these env vars (the server reads **these exact names** — note the checked-in
 `.env` uses different, non-functional names):
 
 | Var | Who sets it |
 |---|---|
-| `ADAPTER_ACCOUNT_SID`, `ADAPTER_AUTH_TOKEN` | agent (adapter's own Twilio-compat creds) |
+| `TRANSLATOR_ACCOUNT_SID`, `TRANSLATOR_AUTH_TOKEN` | agent (translator's own Twilio-compat creds) |
 | `CUSTOMER_VOICE_URL` | agent (the customer's unchanged Twilio app URL) |
 | `WEBHOOK_USER`, `WEBHOOK_PASSWORD` | agent — Basic-auth creds Bandwidth presents on inbound `/bw/*` webhooks; **must match the `CallbackCreds` set on the BW Voice Application in Phase 2** |
 | `PUBLIC_BASE_URL` | 🧍 **Human required** (public HTTPS host/tunnel) |
 | `BW_ACCOUNT_ID`, `BW_CLIENT_ID`, `BW_CLIENT_SECRET`, `BW_APPLICATION_ID` | from Phase 2 |
 
-> Non-loopback deploys: the listen host defaults to `127.0.0.1`; set `HOST=0.0.0.0` (or a specific interface) to expose the adapter behind your `PUBLIC_BASE_URL`.
+> Non-loopback deploys: the listen host defaults to `127.0.0.1`; set `HOST=0.0.0.0` (or a specific interface) to expose the translator behind your `PUBLIC_BASE_URL`.
 
 ### Phase 4 — Deploy
 🧍 **Human required:** provide a public HTTPS host (or tunnel) for
@@ -108,7 +108,7 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
   - `Connect` — the `Stream` noun maps to `StartStream` via the Media Streams
     bridge; `ConversationRelay` and `VirtualAgent` are unsupported (separate
     IoV).
-  - `Stream` — Twilio's WS message schema is emulated by the adapter's stream
+  - `Stream` — Twilio's WS message schema is emulated by the translator's stream
     bridge; live Bandwidth-side binding requires fixture capture.
   - `Conference` — basic named conferences work, but `waitUrl` hold music has
     no Bandwidth equivalent, `beep` is only partially supported, and
@@ -118,10 +118,10 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
 - **Unsupported (no BXML equivalent — a business decision to drop/redesign):**
   `Enqueue`, `Leave`, `Queue`, `Client`, `Pay`. Bandwidth has no queue primitive
   (`Enqueue`/`Leave`/`Queue` fail loudly), no WebRTC client endpoint
-  (`Client`), and PCI payment capture (`Pay`) is out of scope for the adapter.
+  (`Client`), and PCI payment capture (`Pay`) is out of scope for the translator.
 - **Dynamic SDK-built TwiML:** if the customer app generates TwiML at runtime,
-  there is no static markup to transpile. Run the adapter with
-  `ADAPTER_CAPTURE_DIR=<dir>` and place a few test calls; each customer TwiML
+  there is no static markup to transpile. Run the translator with
+  `TRANSLATOR_CAPTURE_DIR=<dir>` and place a few test calls; each customer TwiML
   response is written there verbatim (content-addressed, deduped). Then
   `npm run bxml-generator -- <dir> <out>` produces standalone BXML for the paths those
   calls exercised. Capture only covers exercised paths — branches you never dial
@@ -130,12 +130,12 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
 ## Errors
 
 Operational failures return a Twilio-shaped JSON body: `{ code, message, more_info, status }`.
-Adapter-specific codes use a private range and are documented here:
+Translator-specific codes use a private range and are documented here:
 
 | code | status | meaning |
 |---|---|---|
 | 90001 | 400 | Missing required request parameter |
-| 90002 | 500 | Internal adapter error (detail is in server logs, not the response) |
+| 90002 | 500 | Internal translator error (detail is in server logs, not the response) |
 | 90003 | 4xx | Malformed request rejected before handling |
 | 90004 | 400 | Request parameter present but failed validation (e.g. an unsafe identifier) |
 

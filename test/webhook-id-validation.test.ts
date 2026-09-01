@@ -8,7 +8,7 @@ import { buildApp } from "../src/server/app.js";
 const config = {
   accountSid: "AC123",
   authToken: "tok",
-  publicBaseUrl: "https://adapter.test",
+  publicBaseUrl: "https://translator.test",
   voiceUrl: "https://customer.test/voice",
   webhookUser: "u",
   webhookPassword: "p",
@@ -67,7 +67,7 @@ describe("/bw/* ingress id validation", () => {
 });
 
 describe("/bw/* ingress id validation — more cases", () => {
-  const cfg = { accountSid: "AC123", authToken: "tok", publicBaseUrl: "https://adapter.test", voiceUrl: "https://customer.test/voice", webhookUser: "u", webhookPassword: "p", allowPrivateEgress: true };
+  const cfg = { accountSid: "AC123", authToken: "tok", publicBaseUrl: "https://translator.test", voiceUrl: "https://customer.test/voice", webhookUser: "u", webhookPassword: "p", allowPrivateEgress: true };
   const authHdr = "Basic " + Buffer.from("u:p").toString("base64");
   function app() {
     const fetchImpl = vi.fn(async () => new Response("<Response><Hangup/></Response>", { status: 200 })) as unknown as typeof fetch;

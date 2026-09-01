@@ -12,7 +12,7 @@ import {
 import { EgressBlockedError } from "../twilio/egress-guard.js";
 import { toCallSid, toRecordingSid } from "../twilio/call-sid.js";
 import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
-import { adapterErrors } from "./errors.js";
+import { serverErrors } from "./errors.js";
 import {
   recordingList,
   recordingResource,
@@ -25,7 +25,7 @@ import { checkReadiness } from "./readiness.js";
 import { safeEqual } from "./safe-equal.js";
 import { captureTwiml } from "./capture.js";
 
-export interface AdapterConfig {
+export interface ServerConfig {
   accountSid: string;
   authToken: string;
   publicBaseUrl: string;
@@ -41,7 +41,7 @@ export interface AdapterConfig {
   captureDir?: string;
 }
 
-export interface AdapterDeps {
+export interface ServerDeps {
   fetchImpl: typeof fetch;
   bwClient: BwClient;
 }
@@ -69,22 +69,22 @@ interface BwRecordingEvent {
   startTime?: string;
 }
 
-export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInstance {
-  // Logging off by default; set ADAPTER_LOG=1 to enable request/error logs.
-  const app = Fastify({ logger: process.env.ADAPTER_LOG === "1" });
+export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstance {
+  // Logging off by default; set TRANSLATOR_LOG=1 to enable request/error logs.
+  const app = Fastify({ logger: process.env.TRANSLATOR_LOG === "1" });
   app.register(formbody);
 
   app.setErrorHandler((err, _req, reply) => {
     // Full detail (incl. upstream bodies) goes to logs only, never the response.
-    app.log.error({ err }, "unhandled adapter error");
+    app.log.error({ err }, "unhandled translator error");
     const sc = (err as { statusCode?: number }).statusCode;
     // Preserve a client-error status Fastify already classified (e.g. malformed
     // body → 400); everything else is a neutral internal 500. We do NOT relabel
     // arbitrary throws as "Bandwidth" failures or forward err.message.
     if (sc && sc >= 400 && sc < 500) {
-      return reply.code(sc).send({ ...adapterErrors.internal(), status: sc, code: 90003, message: "Invalid request" });
+      return reply.code(sc).send({ ...serverErrors.internal(), status: sc, code: 90003, message: "Invalid request" });
     }
-    return reply.code(500).send(adapterErrors.internal());
+    return reply.code(500).send(serverErrors.internal());
   });
 
   const expectedWebhookAuth =
@@ -125,7 +125,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
       {
         name: "SpeakSentence",
         children: [
-          `This application uses a Twilio feature not yet supported by the adapter: ${verbs.join(", ")}. The call will now end.`,
+          `This application uses a Twilio feature not yet supported by the translator: ${verbs.join(", ")}. The call will now end.`,
         ],
       },
       { name: "Hangup" },
@@ -138,7 +138,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
     reply: FastifyReply,
   ) {
     // Split the per-turn latency into the customer webhook round-trip (network,
-    // not ours) and the TwiML→BXML translation tax (CPU, ours). With ADAPTER_LOG=1
+    // not ours) and the TwiML→BXML translation tax (CPU, ours). With TRANSLATOR_LOG=1
     // each turn logs both; see `npm run bench` for the translation tax in isolation.
     const fetchStart = performance.now();
     let twiml: string;
@@ -193,7 +193,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
 
   app.post("/bw/initiate", async (req, reply) => {
     const event = req.body as BwEvent;
-    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(adapterErrors.invalidParam("callId"));
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
     const query = req.query as { voiceUrl?: string };
     const existing = store.get(event.callId);
     const voiceUrl = query.voiceUrl ?? existing?.voiceUrl ?? config.voiceUrl;
@@ -211,9 +211,9 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
 
   app.post("/bw/continue", async (req, reply) => {
     const event = req.body as BwEvent;
-    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(adapterErrors.invalidParam("callId"));
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
     const query = req.query as { next?: string };
-    if (!query.next) return reply.code(400).send(adapterErrors.missingParam("next"));
+    if (!query.next) return reply.code(400).send(serverErrors.missingParam("next"));
     const record =
       store.get(event.callId) ??
       ({
@@ -233,7 +233,7 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
 
   app.post("/bw/disconnect", async (req, reply) => {
     const event = req.body as BwEvent;
-    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(adapterErrors.invalidParam("callId"));
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
     const record = store.get(event.callId);
     if (record) {
       // Bandwidth bills (and Twilio reports) from answer to end; fall back to 0
@@ -270,9 +270,9 @@ export function buildApp(config: AdapterConfig, deps: AdapterDeps): FastifyInsta
   // recordingStatusCallback payload and forward it to the customer's callback URL.
   app.post("/bw/recording-status", async (req, reply) => {
     const event = req.body as BwRecordingEvent;
-    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(adapterErrors.invalidParam("callId"));
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
     if (event.recordingId !== undefined && !isSafeBwId(event.recordingId))
-      return reply.code(400).send(adapterErrors.invalidParam("recordingId"));
+      return reply.code(400).send(serverErrors.invalidParam("recordingId"));
     const cb = (req.query as { cb?: string }).cb;
     const record = store.get(event.callId);
     if (cb && record && event.recordingId) {

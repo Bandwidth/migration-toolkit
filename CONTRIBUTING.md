@@ -11,9 +11,9 @@ The Migration Toolkit is best-effort and community-supported — not a fully sup
 Open a GitHub issue with enough for someone to reproduce it without a back-and-forth:
 
 - **What you were trying to do** — the TwiML/verb or REST call involved.
-- **What happened vs. what you expected** — include the adapter's output. When it can't do something, it's designed to say so and stop rather than fail silently, so paste that message if you got one.
+- **What happened vs. what you expected** — include the toolkit's output. When it can't do something, it's designed to say so and stop rather than fail silently, so paste that message if you got one.
 - **A minimal repro** — the smallest TwiML snippet or request that triggers it. Scrub any real numbers, tokens, or customer data first.
-- **Environment** — adapter version/commit, Node version, and whether you're hitting real Bandwidth or a test setup.
+- **Environment** — toolkit version/commit, Node version, and whether you're hitting real Bandwidth or a test setup.
 
 > ⚠️ **Never** paste live credentials, real customer phone numbers, recordings, or any PII into an issue or PR. Redact before you post.
 
@@ -34,13 +34,13 @@ Open a GitHub issue with enough for someone to reproduce it without a back-and-f
 
 ## What makes a change easy to accept
 
-- It keeps the adapter **honest**: correct translations, and a loud, clear failure when something isn't supported — never a silently broken call.
+- It keeps the toolkit **honest**: correct translations, and a loud, clear failure when something isn't supported — never a silently broken call.
 - It's **tested** and the suite passes.
 - It's **scoped** — one focused change per PR beats a sprawling one.
-- It updates the **docs** (README capability tables especially) when it changes what the adapter can do.
+- It updates the **docs** (README capability tables especially) when it changes what the toolkit can do.
 
 ## What to expect on review
 
-Review may take a while, and a maintainer might ask you to carry a change further than you expected — more tests, a doc update, a tweak to the matrix. That bar is what keeps the adapter trustworthy on live calls.
+Review may take a while, and a maintainer might ask you to carry a change further than you expected — more tests, a doc update, a tweak to the matrix. That bar is what keeps the toolkit trustworthy on live calls.
 
 Thanks for contributing. Every solid issue and PR makes this more useful for the next person moving a voice app without rewriting it.

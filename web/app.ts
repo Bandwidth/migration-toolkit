@@ -79,7 +79,7 @@ function renderVerdict(v: PreflightView): string {
         <div class="pf-tiles">
           ${tile("clean", v.counts.clean, "Clean")}
           ${tile("warn", v.counts.headsUp, "Heads-up")}
-          ${tile("block", v.counts.blocker, "Blocker")}
+          ${tile("block", v.counts.blocker, "No direct equivalent")}
         </div>
       </div>
     </section>`;
@@ -106,7 +106,7 @@ function tile(kind: "clean" | "warn" | "block", n: number, label: string): strin
 // ---- Findings ----
 function renderFindings(v: PreflightView): string {
   const groups: Array<[string, "block" | "warn" | "clean", VerbCard[]]> = [
-    ["Blockers", "block", v.blockers],
+    ["No direct equivalent", "block", v.blockers],
     ["Heads-up", "warn", v.headsUp],
     ["Clean", "clean", v.clean],
   ];

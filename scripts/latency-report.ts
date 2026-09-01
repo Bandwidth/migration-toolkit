@@ -1,4 +1,4 @@
-// Turns a live adapter's ADAPTER_LOG=1 output into a latency report: the
+// Turns a live translator's TRANSLATOR_LOG=1 output into a latency report: the
 // per-turn split between the customer webhook round-trip (fetchMs, network —
 // not ours) and the TwiML→BXML translation (translateMs, CPU — ours), as
 // p50/p99/max, same shape as the benches.
@@ -8,11 +8,11 @@
 // distance to Bandwidth's voice edge.
 //
 // Live pipe (logs stream through to your terminal, report prints on Ctrl-C):
-//   ADAPTER_LOG=1 npm start 2>&1 | tsx scripts/latency-report.ts
+//   TRANSLATOR_LOG=1 npm start 2>&1 | tsx scripts/latency-report.ts
 //
 // Or analyze a captured log file:
-//   ADAPTER_LOG=1 npm start > adapter.log 2>&1     # ...place call, then Ctrl-C
-//   npm run latency:report -- adapter.log
+//   TRANSLATOR_LOG=1 npm start > translator.log 2>&1     # ...place call, then Ctrl-C
+//   npm run latency:report -- translator.log
 import { createInterface } from "node:readline";
 import { createReadStream } from "node:fs";
 
@@ -31,7 +31,7 @@ function consume(line: string) {
   try {
     rec = JSON.parse(line);
   } catch {
-    return; // not a JSON log line (e.g. the "adapter listening on :3000" banner)
+    return; // not a JSON log line (e.g. the "translator listening on :3000" banner)
   }
   if (rec.msg === "fetchAndTranslate timing") {
     if (typeof rec.fetchMs === "number") fetchMs.push(rec.fetchMs);
@@ -50,7 +50,7 @@ function statRow(label: string, xs: number[]): string {
 function report() {
   if (!fetchMs.length && !translateMs.length && !responseMs.length) {
     process.stderr.write(
-      "\n[latency-report] No timing lines found. Did you run with ADAPTER_LOG=1 " +
+      "\n[latency-report] No timing lines found. Did you run with TRANSLATOR_LOG=1 " +
         "and exercise /bw/initiate or /bw/continue?\n",
     );
     return;
@@ -60,7 +60,7 @@ function report() {
   out.write(`${"".padEnd(16)}${"n".padStart(7)}${"mean".padStart(11)}${"p50".padStart(11)}${"p99".padStart(11)}${"max".padStart(11)}\n`);
   out.write("─".repeat(67) + "\n");
   out.write(statRow("fetchMs", fetchMs) + "   ← customer webhook RTT (network)\n");
-  out.write(statRow("translateMs", translateMs) + "   ← TwiML→BXML (the adapter's tax)\n");
+  out.write(statRow("translateMs", translateMs) + "   ← TwiML→BXML (the translator's tax)\n");
 
   if (fetchMs.length && translateMs.length) {
     const totMean = mean(fetchMs) + mean(translateMs);

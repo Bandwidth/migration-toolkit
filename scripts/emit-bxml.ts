@@ -1,8 +1,8 @@
-// Emits the adapter's BXML output for representative TwiML inputs, one doc per
+// Emits the translator's BXML output for representative TwiML inputs, one doc per
 // line, so an external validator (band bxml) can check each. Dev tool.
 import { translateTwiml } from "../src/translator/translate.js";
 
-const rw = (u: string) => `https://adapter.test/bw/continue?next=${encodeURIComponent(u)}`;
+const rw = (u: string) => `https://translator.test/bw/continue?next=${encodeURIComponent(u)}`;
 
 const SAMPLES: Record<string, string> = {
   ivr: `<Response><Gather numDigits="1" action="/menu"><Say>Welcome. Press 1 for sales.</Say></Gather><Say>No input. Goodbye.</Say></Response>`,

@@ -1,6 +1,6 @@
 // Dev-only Twilio webhook capture server. Logs each request (method, path,
 // query, the X-Twilio-Signature header, and the form body) to capture/ as JSON,
-// and returns TwiML so the call flow proceeds. Not part of the shipped adapter.
+// and returns TwiML so the call flow proceeds. Not part of the shipped translator.
 import { createServer } from "node:http";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";

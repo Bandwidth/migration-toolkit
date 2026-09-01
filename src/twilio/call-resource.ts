@@ -117,7 +117,7 @@ export const twilioErrors = {
     };
   },
   /**
-   * 400 for an unsupported recording-control Status. Adapter-specific (not a
+   * 400 for an unsupported recording-control Status. Translator-specific (not a
    * fixture-verified Twilio code): Bandwidth's recording REST does pause/resume
    * only — there is no REST stop (StopRecording is a BXML verb).
    */
