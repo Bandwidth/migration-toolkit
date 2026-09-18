@@ -105,9 +105,13 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     `Siprec` and `VirtualAgent` nouns are unsupported.
   - `Refer` — Bandwidth only honors `Refer` on inbound SIP URI calls, so a PSTN
     call leg cannot be REFER'd (a platform constraint, not a translation gap).
-  - `Connect` — the `Stream` noun maps to `StartStream` via the Media Streams
-    bridge; `ConversationRelay` and `VirtualAgent` are unsupported (separate
-    IoV).
+  - `Connect` — the `Stream` noun maps to `StartStream` followed by
+    `StopStream wait="true"`, which holds the call open until the bot closes
+    the WebSocket (Bandwidth ends a call when BXML runs out of verbs, so a bare
+    `StartStream` hangs up on answer). Verbs after `<Connect>` therefore run
+    after the stream ends, as on Twilio. A stream name is generated when the
+    TwiML omits one. `ConversationRelay` and `VirtualAgent` are unsupported
+    (separate IoV).
   - `Stream` — Twilio's WS message schema is emulated by the translator's stream
     bridge; live Bandwidth-side binding requires fixture capture.
   - `Conference` — basic named conferences work, but `waitUrl` hold music has

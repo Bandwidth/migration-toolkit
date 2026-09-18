@@ -196,6 +196,7 @@ function stampCallbackAuth(els: XmlEl[], auth: { username: string; password: str
 
 export function translateTwiml(twiml: string, opts: TranslateOptions = {}): TranslateResult {
   bxmlByteBudget = MAX_TOTAL_BXML_BYTES;
+  connectStreamSeq = 0;
   const root = parseTwiml(twiml);
   const findings: Finding[] = [];
   const rewrite = opts.rewriteUrl ?? ((u: string) => u);
@@ -561,6 +562,21 @@ function streamToStartStream(
   return [{ name: "StartStream", attrs }];
 }
 
+// Per-document counter for generated Connect/Stream names. Twilio's <Stream name>
+// is optional, but Bandwidth's <StopStream> needs a name that matches the
+// <StartStream> it stops. Reset at the start of each translateTwiml call
+// (same module-state caveat as bxmlByteBudget).
+let connectStreamSeq = 0;
+
+/** Twilio <Connect><Stream> → BW <StartStream mode="bidirectional"/> followed by
+ *  <StopStream wait="true"/>.
+ *
+ *  Bandwidth ends the call as soon as BXML execution runs out of verbs, so a bare
+ *  <StartStream> hangs up on answer (verified on real calls, VAPI-3985). The
+ *  StartStream docs' recommended fix for bidirectional streams is a StopStream
+ *  with wait="true" right after it: BXML execution blocks there until the bot
+ *  closes the WebSocket. That also reproduces Twilio's <Connect> semantics, where
+ *  any verbs after <Connect> run only once the stream has ended. */
 function translateConnect(
   node: TwimlNode,
   findings: Finding[],
@@ -573,7 +589,21 @@ function translateConnect(
       findings,
       `Connect noun <${node.children[0]?.name ?? "?"}> is not supported (ConversationRelay/VirtualAgent are out of translator scope).`,
     );
-  return streamToStartStream(stream, "bidirectional", findings, rewrite);
+
+  const name = stream.attrs.name ?? `connect-stream-${++connectStreamSeq}`;
+  const named: TwimlNode = { ...stream, attrs: { ...stream.attrs, name } };
+  const els = streamToStartStream(named, "bidirectional", findings, rewrite);
+  if (!els) return null;
+
+  warn(
+    "Connect",
+    'Inserted <StopStream wait="true"> after StartStream. Bandwidth ends the call when BXML runs out ' +
+      "of verbs, so a bare StartStream hangs up on answer. With it, the call stays up until the bot " +
+      "closes the WebSocket, and any verbs after <Connect> run after the stream ends, matching " +
+      "Twilio's blocking semantics.",
+    findings,
+  );
+  return [...els, { name: "StopStream", attrs: { name, wait: "true" } }];
 }
 
 // Twilio <Start> with <Transcription> noun → BW <StartTranscription>.
