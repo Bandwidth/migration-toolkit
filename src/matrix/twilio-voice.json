@@ -140,7 +140,7 @@
     "Connect": {
       "bxml": "StartStream",
       "status": "partial",
-      "notes": "Stream noun maps to StartStream via the Media Streams bridge; ConversationRelay and VirtualAgent are unsupported (separate IoV).",
+      "notes": "Stream noun maps to StartStream followed by StopStream wait=\"true\", which holds the call open until the bot closes the WebSocket (a bare StartStream ends the call on answer). ConversationRelay and VirtualAgent are unsupported (separate IoV).",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/startStream",
       "attributes": {}
     },
