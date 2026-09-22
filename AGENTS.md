@@ -113,7 +113,11 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     TwiML omits one. `ConversationRelay` and `VirtualAgent` are unsupported
     (separate IoV).
   - `Stream` — Twilio's WS message schema is emulated by the translator's stream
-    bridge; live Bandwidth-side binding requires fixture capture.
+    bridge; live Bandwidth-side binding requires fixture capture. `<Parameter>`
+    children map to nested `<StreamParam/>` elements in order (Bandwidth allows
+    at most 12; extras are dropped with a warning). Bandwidth echoes them in its
+    `start` event as `streamParams`, and the bridge forwards them to the bot as
+    Twilio `customParameters`.
   - `Conference` — basic named conferences work, but `waitUrl` hold music has
     no Bandwidth equivalent, `beep` is only partially supported, and
     `startConferenceOnEnter`/`endConferenceOnExit`/`maxParticipants` have no

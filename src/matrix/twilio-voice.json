@@ -147,7 +147,7 @@
     "Stream": {
       "bxml": "StartStream",
       "status": "partial",
-      "notes": "Twilio WS message schema is emulated by the translator's stream bridge; live Bandwidth-side binding requires fixture capture.",
+      "notes": "Twilio WS message schema is emulated by the translator's stream bridge; live Bandwidth-side binding requires fixture capture. <Parameter> children become nested <StreamParam/> elements (Bandwidth allows at most 12) and reach the bot as customParameters.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/startStream",
       "attributes": {}
     },
