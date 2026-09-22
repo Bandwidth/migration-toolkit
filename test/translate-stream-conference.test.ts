@@ -111,6 +111,42 @@ describe("Stream lifecycle", () => {
       expect(capWarnings[0].message).toContain("2 Stream <Parameter> element(s) beyond that were dropped");
     });
 
+    it("tallies everything past the 12th accepted Parameter under the cap, even if also invalid", () => {
+      const valid = Array.from({ length: 12 }, (_, i) => `<Parameter name="p${i}" value="v${i}"/>`).join("");
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws">${valid}<Parameter name="${"n".repeat(300)}" value="x"/></Stream></Connect></Response>`,
+      );
+      expect(r.bxml.match(/<StreamParam /g)).toHaveLength(12);
+      expect(r.findings.some((f) => /1 Stream <Parameter> element\(s\) beyond that were dropped/.test(f.message))).toBe(true);
+      expect(r.findings.some((f) => /name exceeds/.test(f.message))).toBe(false);
+    });
+
+    it("keeps the first of duplicate Parameter names and warns, since streamParams is a flat map", () => {
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws">
+           <Parameter name="k" value="first"/>
+           <Parameter name="other" value="o"/>
+           <Parameter name="k" value="second"/>
+         </Stream></Connect></Response>`,
+      );
+      expect(r.hasErrors).toBe(false);
+      expect(r.bxml.match(/<StreamParam name="k" /g)).toHaveLength(1);
+      expect(r.bxml).toContain(`<StreamParam name="k" value="first"/>`);
+      expect(r.bxml).not.toContain(`value="second"`);
+      expect(r.findings.filter((f) => f.verb === "Stream" && /Duplicate Stream <Parameter name="k">/.test(f.message))).toHaveLength(1);
+    });
+
+    it("never echoes more than 32 characters of a name into a finding", () => {
+      const huge = "x".repeat(5000);
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws"><Parameter name="${huge}"/></Stream></Connect></Response>`,
+      );
+      const f = r.findings.find((f) => /requires both name and value/.test(f.message))!;
+      expect(f).toBeDefined();
+      expect(f.message.length).toBeLessThan(200);
+      expect(f.message).toContain(`name="${"x".repeat(32)}…"`);
+    });
+
     it("drops a Parameter whose name exceeds Bandwidth's 256-character limit", () => {
       // Valid TwiML: Twilio's only limit is 500 chars for name+value combined.
       // Bandwidth would reject the entire BXML document for this one name.

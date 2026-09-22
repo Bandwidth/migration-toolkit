@@ -146,7 +146,13 @@ describe("start message", () => {
     expect(customParametersFromBwStart(undefined)).toEqual({});
     expect(customParametersFromBwStart("start")).toEqual({});
     // Values are always strings on the Twilio side, even if Bandwidth ever sent a number.
-    expect(customParametersFromBwStart({ streamParams: { n: 42, s: "x", nil: null } })).toEqual({ n: "42", s: "x" });
+    expect(customParametersFromBwStart({ streamParams: { n: 42, b: true, s: "x", nil: null } })).toEqual({
+      n: "42",
+      b: "true",
+      s: "x",
+    });
+    // The documented shape is flat; nested values are skipped, not forwarded as "[object Object]".
+    expect(customParametersFromBwStart({ streamParams: { o: { a: 1 }, arr: [1], s: "x" } })).toEqual({ s: "x" });
   });
 
   it("customParametersFromBwStart keeps a parameter literally named __proto__", () => {

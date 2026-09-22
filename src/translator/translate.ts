@@ -559,17 +559,26 @@ const MAX_STREAM_PARAM_VALUE = 2048;
  *  (see customParametersFromBwStart in streams/bridge.ts). Order is preserved. */
 function streamParams(stream: TwimlNode, findings: Finding[]): XmlEl[] {
   const out: XmlEl[] = [];
-  let dropped = 0;
+  const seen = new Set<string>();
+  let beyondCap = 0;
+  // Names can be arbitrarily long in TwiML; never echo more than this into a finding.
+  const brief = (s: string | undefined) => (s === undefined ? "" : s.length > 32 ? s.slice(0, 32) + "…" : s);
   for (const child of stream.children) {
     if (child.name !== "Parameter") {
       warn("Stream", `Stream child <${child.name}> has no Bandwidth equivalent and was dropped.`, findings);
+      continue;
+    }
+    // Cap first, so every <Parameter> past the 12 accepted ones is tallied here
+    // regardless of whatever else might be wrong with it.
+    if (out.length >= MAX_STREAM_PARAMS) {
+      beyondCap++;
       continue;
     }
     const { name, value } = child.attrs;
     if (name === undefined || value === undefined) {
       warn(
         "Stream",
-        `Stream <Parameter> requires both name and value; dropped <Parameter name="${name ?? ""}">.`,
+        `Stream <Parameter> requires both name and value; dropped <Parameter name="${brief(name)}">.`,
         findings,
       );
       continue;
@@ -578,7 +587,7 @@ function streamParams(stream: TwimlNode, findings: Finding[]): XmlEl[] {
       warn(
         "Stream",
         `StreamParam name exceeds Bandwidth's ${MAX_STREAM_PARAM_NAME}-character limit ` +
-          `(${name.length}); dropped <Parameter name="${name.slice(0, 32)}…">.`,
+          `(${name.length}); dropped <Parameter name="${brief(name)}">.`,
         findings,
       );
       continue;
@@ -592,17 +601,26 @@ function streamParams(stream: TwimlNode, findings: Finding[]): XmlEl[] {
       );
       continue;
     }
-    if (out.length >= MAX_STREAM_PARAMS) {
-      dropped++;
+    // Bandwidth delivers streamParams as a flat map (as does Twilio's
+    // customParameters), so a repeated name can carry only one value and which
+    // one wins is undocumented. Keep the first, drop the rest, and say so.
+    if (seen.has(name)) {
+      warn(
+        "Stream",
+        `Duplicate Stream <Parameter name="${name}">: streamParams is a flat map, so only the ` +
+          "first value was kept.",
+        findings,
+      );
       continue;
     }
+    seen.add(name);
     out.push({ name: "StreamParam", attrs: { name, value } });
   }
-  if (dropped > 0)
+  if (beyondCap > 0)
     warn(
       "Stream",
       `Bandwidth allows at most ${MAX_STREAM_PARAMS} StreamParam per StartStream; ` +
-        `${dropped} Stream <Parameter> element(s) beyond that were dropped.`,
+        `${beyondCap} Stream <Parameter> element(s) beyond that were dropped.`,
       findings,
     );
   return out;
@@ -625,8 +643,8 @@ function streamToStartStream(
     mode,
     tracks: stream.attrs.track ? TWILIO_STREAM_TRACK_TO_BW[stream.attrs.track] ?? "inbound" : "inbound",
   };
-  const params = streamParams(stream, findings);
-  return [params.length ? { name: "StartStream", attrs, children: params } : { name: "StartStream", attrs }];
+  // An empty children array still serializes as a self-closing <StartStream/>.
+  return [{ name: "StartStream", attrs, children: streamParams(stream, findings) }];
 }
 
 // Per-document counter for generated Connect/Stream names. Twilio's <Stream name>

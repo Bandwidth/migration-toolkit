@@ -34,9 +34,11 @@ export interface BridgeOpts {
  * Bandwidth copies every <StreamParam name value/> under the <StartStream> into
  * the start event as `streamParams: { name: value, ... }` (a flat map, per the
  * StartStream docs). Twilio delivers the same data as `start.customParameters`,
- * also a flat string map, so the mapping is a copy with values coerced to
- * strings. Anything that is not a plain object yields an empty map; a bot
- * always receives a `customParameters` object, never undefined.
+ * also a flat string map, so the mapping is a copy with primitive values
+ * coerced to strings. Nested objects and arrays are not in the documented
+ * shape and are skipped rather than forwarded as "[object Object]". Anything
+ * that is not a plain object yields an empty map; a bot always receives a
+ * `customParameters` object, never undefined.
  */
 export function customParametersFromBwStart(event: unknown): Record<string, string> {
   const params = (event as { streamParams?: unknown } | null)?.streamParams;
@@ -45,8 +47,8 @@ export function customParametersFromBwStart(event: unknown): Record<string, stri
   // property instead of hitting the Object.prototype setter and vanishing.
   const out: Record<string, string> = Object.create(null);
   for (const [k, v] of Object.entries(params as Record<string, unknown>)) {
-    if (v === undefined || v === null) continue;
-    out[k] = typeof v === "string" ? v : String(v);
+    if (typeof v === "string") out[k] = v;
+    else if (typeof v === "number" || typeof v === "boolean") out[k] = String(v);
   }
   return out;
 }
