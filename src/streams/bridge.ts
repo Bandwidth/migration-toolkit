@@ -41,7 +41,9 @@ export interface BridgeOpts {
 export function customParametersFromBwStart(event: unknown): Record<string, string> {
   const params = (event as { streamParams?: unknown } | null)?.streamParams;
   if (params === null || typeof params !== "object" || Array.isArray(params)) return {};
-  const out: Record<string, string> = {};
+  // Null prototype so a key literally named "__proto__" is stored as an own
+  // property instead of hitting the Object.prototype setter and vanishing.
+  const out: Record<string, string> = Object.create(null);
   for (const [k, v] of Object.entries(params as Record<string, unknown>)) {
     if (v === undefined || v === null) continue;
     out[k] = typeof v === "string" ? v : String(v);

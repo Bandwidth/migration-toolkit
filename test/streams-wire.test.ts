@@ -149,6 +149,19 @@ describe("start message", () => {
     expect(customParametersFromBwStart({ streamParams: { n: 42, s: "x", nil: null } })).toEqual({ n: "42", s: "x" });
   });
 
+  it("customParametersFromBwStart keeps a parameter literally named __proto__", () => {
+    // JSON.parse yields an own "__proto__" key; a plain {} target would route the
+    // assignment to the Object.prototype setter and silently lose the pair.
+    const evt = JSON.parse('{"streamParams":{"__proto__":"p","a":"1"}}');
+    const out = customParametersFromBwStart(evt);
+    expect(Object.keys(out).sort()).toEqual(["__proto__", "a"]);
+    expect(Object.getOwnPropertyDescriptor(out, "__proto__")?.value).toBe("p");
+    // Survives the wire: the bot sees both keys.
+    expect(JSON.stringify(out)).toBe('{"__proto__":"p","a":"1"}');
+    // And nothing leaked onto the global prototype.
+    expect(({} as any).p).toBeUndefined();
+  });
+
   it("customParameters defaults to empty object when omitted", async () => {
     const port = nextPort();
     const { messages, close } = await botServer(port);

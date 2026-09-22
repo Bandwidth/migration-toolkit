@@ -543,17 +543,20 @@ const TWILIO_STREAM_TRACK_TO_BW: Record<string, string> = {
   both_tracks: "both",
 };
 
-// Bandwidth's documented ceiling on <StreamParam/> children per <StartStream>.
-// Twilio sets no count limit on <Parameter>, so anything past this is dropped
-// with a warning rather than emitting BXML Bandwidth would reject outright.
+// Bandwidth's documented limits on <StreamParam/> under <StartStream>: at most
+// 12 elements, name up to 256 chars, value up to 2048 chars. Exceeding any of
+// them makes Bandwidth reject the whole BXML document, not just the one param,
+// so offending <Parameter>s are dropped with a warning instead. Twilio's only
+// limit is 500 chars for name+value combined, which does bound value well under
+// 2048 but leaves name free to exceed 256 in perfectly valid TwiML.
 const MAX_STREAM_PARAMS = 12;
+const MAX_STREAM_PARAM_NAME = 256;
+const MAX_STREAM_PARAM_VALUE = 2048;
 
 /** Twilio <Stream><Parameter name value/> children → BW <StreamParam name value/>.
  *  Bandwidth copies these into the WebSocket "start" event as a `streamParams`
  *  map, which the stream bridge forwards to the bot as Twilio `customParameters`
- *  (see customParametersFromBwStart in streams/bridge.ts). Order is preserved.
- *  Twilio caps name+value at 500 chars combined, so Bandwidth's per-attribute
- *  limits (256 / 2048) cannot be exceeded by valid TwiML and are not re-checked. */
+ *  (see customParametersFromBwStart in streams/bridge.ts). Order is preserved. */
 function streamParams(stream: TwimlNode, findings: Finding[]): XmlEl[] {
   const out: XmlEl[] = [];
   let dropped = 0;
@@ -567,6 +570,24 @@ function streamParams(stream: TwimlNode, findings: Finding[]): XmlEl[] {
       warn(
         "Stream",
         `Stream <Parameter> requires both name and value; dropped <Parameter name="${name ?? ""}">.`,
+        findings,
+      );
+      continue;
+    }
+    if (name.length > MAX_STREAM_PARAM_NAME) {
+      warn(
+        "Stream",
+        `StreamParam name exceeds Bandwidth's ${MAX_STREAM_PARAM_NAME}-character limit ` +
+          `(${name.length}); dropped <Parameter name="${name.slice(0, 32)}…">.`,
+        findings,
+      );
+      continue;
+    }
+    if (value.length > MAX_STREAM_PARAM_VALUE) {
+      warn(
+        "Stream",
+        `StreamParam value exceeds Bandwidth's ${MAX_STREAM_PARAM_VALUE}-character limit ` +
+          `(${value.length}); dropped <Parameter name="${name}">.`,
         findings,
       );
       continue;

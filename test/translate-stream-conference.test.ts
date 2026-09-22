@@ -106,7 +106,39 @@ describe("Stream lifecycle", () => {
       expect(r.bxml.match(/<StreamParam /g)).toHaveLength(12);
       expect(r.bxml).toContain(`name="p11"`);
       expect(r.bxml).not.toContain(`name="p12"`);
-      expect(r.findings.some((f) => f.verb === "Stream" && /at most 12/.test(f.message) && /2 /.test(f.message))).toBe(true);
+      const capWarnings = r.findings.filter((f) => f.verb === "Stream" && /at most 12 StreamParam/.test(f.message));
+      expect(capWarnings).toHaveLength(1);
+      expect(capWarnings[0].message).toContain("2 Stream <Parameter> element(s) beyond that were dropped");
+    });
+
+    it("drops a Parameter whose name exceeds Bandwidth's 256-character limit", () => {
+      // Valid TwiML: Twilio's only limit is 500 chars for name+value combined.
+      // Bandwidth would reject the entire BXML document for this one name.
+      const longName = "n".repeat(300);
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws">
+           <Parameter name="${longName}" value="x"/>
+           <Parameter name="ok" value="1"/>
+         </Stream></Connect></Response>`,
+      );
+      expect(r.hasErrors).toBe(false);
+      expect(r.bxml).not.toContain(longName);
+      expect(r.bxml).toContain(`<StreamParam name="ok" value="1"/>`);
+      expect(r.findings.some((f) => f.verb === "Stream" && /name exceeds Bandwidth's 256-character limit \(300\)/.test(f.message))).toBe(true);
+    });
+
+    it("keeps a 256-character name and drops a value over 2048 characters", () => {
+      const maxName = "n".repeat(256);
+      const longValue = "v".repeat(2049);
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws">
+           <Parameter name="${maxName}" value="x"/>
+           <Parameter name="big" value="${longValue}"/>
+         </Stream></Connect></Response>`,
+      );
+      expect(r.bxml).toContain(`<StreamParam name="${maxName}" value="x"/>`);
+      expect(r.bxml).not.toContain(longValue);
+      expect(r.findings.some((f) => f.verb === "Stream" && /value exceeds Bandwidth's 2048-character limit \(2049\)/.test(f.message))).toBe(true);
     });
 
     it("drops a Parameter missing name or value with a warning instead of emitting invalid BXML", () => {
