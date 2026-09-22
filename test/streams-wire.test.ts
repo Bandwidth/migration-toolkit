@@ -10,7 +10,11 @@
 import { describe, it, expect } from "vitest";
 import { WebSocketServer, WebSocket } from "ws";
 import { EventEmitter } from "node:events";
-import { TwilioStreamBridge, type BwStreamSource } from "../src/streams/bridge.js";
+import {
+  TwilioStreamBridge,
+  customParametersFromBwStart,
+  type BwStreamSource,
+} from "../src/streams/bridge.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -105,6 +109,44 @@ describe("start message", () => {
       greeting: "hello",
       lang: "en",
     });
+  });
+
+  // VAPI-3989: Bandwidth echoes <StreamParam/> values in its "start" event as a
+  // flat `streamParams` map; the bot must see them as Twilio customParameters.
+  it("forwards Bandwidth streamParams to the bot as customParameters", async () => {
+    // Shape per the StartStream docs' start-event example.
+    const bwStart = {
+      eventType: "start",
+      metadata: { accountId: "9900778", callId: "c-abc", to: "+15550001111", from: "+15550002222" },
+      streamParams: { callSid: "CA123", tenant: "acme" },
+    };
+    const port = nextPort();
+    const { messages, close } = await botServer(port);
+    const source = new FakeBwSource();
+    const bridge = new TwilioStreamBridge({
+      botUrl: `ws://127.0.0.1:${port}`,
+      callSid: "CA123",
+      accountSid: "AC222",
+      customParameters: customParametersFromBwStart(bwStart),
+      source,
+    });
+    await bridge.ready();
+    await waitFor(() => messages.length >= 2);
+    bridge.close();
+    close();
+
+    const startMsg = messages.find((m: any) => m.event === "start") as any;
+    expect(startMsg.start.customParameters).toEqual({ callSid: "CA123", tenant: "acme" });
+  });
+
+  it("customParametersFromBwStart tolerates missing or malformed streamParams", () => {
+    expect(customParametersFromBwStart({ eventType: "start" })).toEqual({});
+    expect(customParametersFromBwStart({ streamParams: null })).toEqual({});
+    expect(customParametersFromBwStart({ streamParams: [1, 2] })).toEqual({});
+    expect(customParametersFromBwStart(undefined)).toEqual({});
+    expect(customParametersFromBwStart("start")).toEqual({});
+    // Values are always strings on the Twilio side, even if Bandwidth ever sent a number.
+    expect(customParametersFromBwStart({ streamParams: { n: 42, s: "x", nil: null } })).toEqual({ n: "42", s: "x" });
   });
 
   it("customParameters defaults to empty object when omitted", async () => {

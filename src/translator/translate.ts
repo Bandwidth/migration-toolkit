@@ -543,8 +543,53 @@ const TWILIO_STREAM_TRACK_TO_BW: Record<string, string> = {
   both_tracks: "both",
 };
 
+// Bandwidth's documented ceiling on <StreamParam/> children per <StartStream>.
+// Twilio sets no count limit on <Parameter>, so anything past this is dropped
+// with a warning rather than emitting BXML Bandwidth would reject outright.
+const MAX_STREAM_PARAMS = 12;
+
+/** Twilio <Stream><Parameter name value/> children → BW <StreamParam name value/>.
+ *  Bandwidth copies these into the WebSocket "start" event as a `streamParams`
+ *  map, which the stream bridge forwards to the bot as Twilio `customParameters`
+ *  (see customParametersFromBwStart in streams/bridge.ts). Order is preserved.
+ *  Twilio caps name+value at 500 chars combined, so Bandwidth's per-attribute
+ *  limits (256 / 2048) cannot be exceeded by valid TwiML and are not re-checked. */
+function streamParams(stream: TwimlNode, findings: Finding[]): XmlEl[] {
+  const out: XmlEl[] = [];
+  let dropped = 0;
+  for (const child of stream.children) {
+    if (child.name !== "Parameter") {
+      warn("Stream", `Stream child <${child.name}> has no Bandwidth equivalent and was dropped.`, findings);
+      continue;
+    }
+    const { name, value } = child.attrs;
+    if (name === undefined || value === undefined) {
+      warn(
+        "Stream",
+        `Stream <Parameter> requires both name and value; dropped <Parameter name="${name ?? ""}">.`,
+        findings,
+      );
+      continue;
+    }
+    if (out.length >= MAX_STREAM_PARAMS) {
+      dropped++;
+      continue;
+    }
+    out.push({ name: "StreamParam", attrs: { name, value } });
+  }
+  if (dropped > 0)
+    warn(
+      "Stream",
+      `Bandwidth allows at most ${MAX_STREAM_PARAMS} StreamParam per StartStream; ` +
+        `${dropped} Stream <Parameter> element(s) beyond that were dropped.`,
+      findings,
+    );
+  return out;
+}
+
 /** Twilio <Stream> noun → BW <StartStream>. mode is bidirectional under
- *  <Connect> (audio flows both ways) and unidirectional under <Start> (a fork). */
+ *  <Connect> (audio flows both ways) and unidirectional under <Start> (a fork).
+ *  <Parameter> children become nested <StreamParam/> elements. */
 function streamToStartStream(
   stream: TwimlNode,
   mode: "bidirectional" | "unidirectional",
@@ -559,7 +604,8 @@ function streamToStartStream(
     mode,
     tracks: stream.attrs.track ? TWILIO_STREAM_TRACK_TO_BW[stream.attrs.track] ?? "inbound" : "inbound",
   };
-  return [{ name: "StartStream", attrs }];
+  const params = streamParams(stream, findings);
+  return [params.length ? { name: "StartStream", attrs, children: params } : { name: "StartStream", attrs }];
 }
 
 // Per-document counter for generated Connect/Stream names. Twilio's <Stream name>

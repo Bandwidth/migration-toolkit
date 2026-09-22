@@ -53,6 +53,86 @@ describe("Stream lifecycle", () => {
     expect(r.bxml).not.toMatch(/<StartStream [^>]*\/><\/Response>/);
   });
 
+  // VAPI-3989: <Parameter> children used to be dropped silently, so bots got an
+  // empty customParameters map and could not identify the call or tenant.
+  describe("Stream <Parameter> → StreamParam (VAPI-3989)", () => {
+    it("emits one nested StreamParam per Parameter, in order, inside StartStream", () => {
+      const r = translateTwiml(
+        `<Response><Connect><Stream name="agent" url="wss://bot.test/ws">
+           <Parameter name="callSid" value="CA123"/>
+           <Parameter name="tenant" value="acme"/>
+         </Stream></Connect></Response>`,
+        { rewriteUrl: rw },
+      );
+      expect(r.hasErrors).toBe(false);
+      expect(r.bxml).toMatch(
+        /<StartStream [^>]*name="agent"[^>]*><StreamParam name="callSid" value="CA123"\/><StreamParam name="tenant" value="acme"\/><\/StartStream><StopStream name="agent" wait="true"\/>/,
+      );
+      // No drop warnings when every Parameter is valid and within the limit.
+      expect(r.findings.some((f) => /dropped/.test(f.message))).toBe(false);
+    });
+
+    it("output differs from the same Stream without Parameters", () => {
+      const a = translateTwiml(`<Response><Connect><Stream url="wss://bot.test/ws"/></Connect></Response>`);
+      const b = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws"><Parameter name="k" value="v"/></Stream></Connect></Response>`,
+      );
+      expect(b.bxml).not.toBe(a.bxml);
+      expect(a.bxml).not.toContain("StreamParam");
+    });
+
+    it("also applies to Start>Stream forks", () => {
+      const r = translateTwiml(
+        `<Response><Start><Stream name="fork1" url="wss://bot.test/ws"><Parameter name="k" value="v"/></Stream></Start></Response>`,
+      );
+      expect(r.hasErrors).toBe(false);
+      expect(r.bxml).toContain(`<StreamParam name="k" value="v"/></StartStream>`);
+      expect(r.bxml).not.toContain("<StopStream");
+    });
+
+    it("XML-escapes parameter values", () => {
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws"><Parameter name="q" value="a &amp; b &lt; &quot;c&quot;"/></Stream></Connect></Response>`,
+      );
+      expect(r.bxml).toContain(`<StreamParam name="q" value="a &amp; b &lt; &quot;c&quot;"/>`);
+    });
+
+    it("keeps the first 12 Parameters and warns about the rest (Bandwidth limit)", () => {
+      const params = Array.from({ length: 14 }, (_, i) => `<Parameter name="p${i}" value="v${i}"/>`).join("");
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws">${params}</Stream></Connect></Response>`,
+      );
+      expect(r.hasErrors).toBe(false);
+      expect(r.bxml.match(/<StreamParam /g)).toHaveLength(12);
+      expect(r.bxml).toContain(`name="p11"`);
+      expect(r.bxml).not.toContain(`name="p12"`);
+      expect(r.findings.some((f) => f.verb === "Stream" && /at most 12/.test(f.message) && /2 /.test(f.message))).toBe(true);
+    });
+
+    it("drops a Parameter missing name or value with a warning instead of emitting invalid BXML", () => {
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws">
+           <Parameter name="ok" value="1"/>
+           <Parameter name="novalue"/>
+           <Parameter value="noname"/>
+         </Stream></Connect></Response>`,
+      );
+      expect(r.hasErrors).toBe(false);
+      expect(r.bxml.match(/<StreamParam /g)).toHaveLength(1);
+      expect(r.bxml).toContain(`<StreamParam name="ok" value="1"/>`);
+      expect(r.findings.filter((f) => f.verb === "Stream" && /requires both name and value/.test(f.message))).toHaveLength(2);
+    });
+
+    it("warns about non-Parameter children of Stream", () => {
+      const r = translateTwiml(
+        `<Response><Connect><Stream url="wss://bot.test/ws"><Bogus/></Stream></Connect></Response>`,
+      );
+      expect(r.hasErrors).toBe(false);
+      expect(r.bxml).not.toContain("Bogus");
+      expect(r.findings.some((f) => f.verb === "Stream" && /<Bogus>/.test(f.message))).toBe(true);
+    });
+  });
+
   it("Start>Stream → StartStream mode=unidirectional (fork)", () => {
     const r = translateTwiml(
       `<Response><Start><Stream name="fork1" url="wss://bot.test/ws"/></Start></Response>`,
