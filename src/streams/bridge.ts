@@ -18,10 +18,16 @@ import type { EventEmitter } from "node:events";
 /** Bytes of 8 kHz mono mulaw per millisecond of audio: 8000 samples/s, 1 byte each. */
 const MULAW_BYTES_PER_MS = 8;
 
-/** Milliseconds of playback represented by a base64-encoded mulaw payload. */
+/** Milliseconds of playback represented by a base64-encoded mulaw payload.
+ *  The decoded length is derived from the string so no per-frame Buffer is
+ *  allocated: 4 base64 chars encode 3 bytes, less one byte per '=' pad. */
 export function mulawPayloadDurationMs(payloadB64: string): number {
-  return Buffer.from(payloadB64, "base64").length / MULAW_BYTES_PER_MS;
+  const len = payloadB64.length;
+  if (len === 0) return 0;
+  const pad = payloadB64.endsWith("==") ? 2 : payloadB64.endsWith("=") ? 1 : 0;
+  return (Math.floor((len * 3) / 4) - pad) / MULAW_BYTES_PER_MS;
 }
+
 export interface BwStreamSource extends EventEmitter {
   sendMedia(payloadB64: string): void;
   flush(): void;
@@ -38,6 +44,12 @@ export interface BridgeOpts {
    *  "start" event as `streamParams`; build them with customParametersFromBwStart. */
   customParameters?: Record<string, string>;
   source: BwStreamSource;
+  /** Extra delay, in ms, added to every mark's due time. The playout clock
+   *  starts when a frame reaches the bridge, but the caller hears it one-way
+   *  network latency plus Bandwidth's jitter buffer later, so marks otherwise
+   *  return slightly early in the same direction as the original bug. Default 0
+   *  until real measurements from VAPI-3991 give a value worth setting. */
+  playoutLatencyPadMs?: number;
 }
 
 /**
@@ -179,22 +191,26 @@ export class TwilioStreamBridge {
           }
           break;
 
-        case "mark":
+        case "mark": {
           // Per Twilio: the mark comes back when the audio queued before it has
           // finished playing. Nothing queued means it comes back at once.
-          this.pendingMarks.push({ mark: (msg as any).mark, dueAt: this.playoutEndAt });
+          const pad = this.opts.playoutLatencyPadMs ?? 0;
+          const dueAt = this.playoutEndAt > Date.now() ? this.playoutEndAt + pad : this.playoutEndAt;
+          this.pendingMarks.push({ mark: (msg as any).mark, dueAt });
           this.flushDueMarks();
           break;
+        }
 
-        case "clear":
+        case "clear": {
           // Per Twilio: "empties all buffered audio and causes any mark messages
           // to be sent back". Discard the queue, then return every outstanding
           // mark immediately so a mark-gated bot is not left waiting forever.
           this.opts.source.flush();
-          this.playoutEndAt = 0;
-          for (const p of this.pendingMarks) p.dueAt = 0;
-          this.flushDueMarks();
+          const outstanding = this.pendingMarks;
+          this.dropPendingMarks();
+          for (const { mark } of outstanding) this.sendMark(mark);
           break;
+        }
       }
     });
   }
@@ -222,19 +238,17 @@ export class TwilioStreamBridge {
     }
     const now = Date.now();
     while (this.pendingMarks.length && this.pendingMarks[0].dueAt <= now) {
-      const { mark } = this.pendingMarks.shift()!;
-      this.send({
-        event: "mark",
-        sequenceNumber: String(++this.seq),
-        streamSid: this.streamSid,
-        mark,
-      });
+      this.sendMark(this.pendingMarks.shift()!.mark);
     }
     if (this.pendingMarks.length) {
       const wait = this.pendingMarks[0].dueAt - now;
       this.markTimer = setTimeout(() => this.flushDueMarks(), wait);
       this.markTimer.unref?.();
     }
+  }
+
+  private sendMark(mark: unknown): void {
+    this.send({ event: "mark", sequenceNumber: String(++this.seq), streamSid: this.streamSid, mark });
   }
 
   private dropPendingMarks(): void {

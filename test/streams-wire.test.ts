@@ -358,6 +358,48 @@ describe("mark", () => {
     expect(mulawPayloadDurationMs("")).toBe(0);
   });
 
+  it("mulawPayloadDurationMs matches a real decode for every base64 padding case", () => {
+    // Byte counts 0..9 exercise all three padding shapes (none, "=", "==") without
+    // allocating a Buffer on the hot path.
+    for (let bytes = 0; bytes <= 9; bytes++) {
+      const b64 = Buffer.alloc(bytes, 0x7f).toString("base64");
+      expect(mulawPayloadDurationMs(b64)).toBe(Buffer.from(b64, "base64").length / 8);
+    }
+  });
+
+  it("playoutLatencyPadMs delays marks that have audio ahead of them, not idle ones", async () => {
+    const port = nextPort();
+    const { messages, socket, close } = await botServer(port);
+    const source = new FakeBwSource();
+    const bridge = new TwilioStreamBridge({
+      botUrl: `ws://127.0.0.1:${port}`,
+      callSid: "CApad",
+      accountSid: "ACpad",
+      source,
+      playoutLatencyPadMs: 200,
+    });
+    await bridge.ready();
+    const bot = await socket;
+    const send = (obj: object) => bot.send(JSON.stringify({ streamSid: bridge.streamSid, ...obj }));
+    const marks = () => messages.filter((m: any) => m.event === "mark") as any[];
+
+    // Idle: no audio queued, so no pad either.
+    const idleAt = Date.now();
+    send({ event: "mark", mark: { name: "idle" } });
+    await waitFor(() => marks().length >= 1);
+    expect(Date.now() - idleAt).toBeLessThan(150);
+
+    // 100 ms of audio + 200 ms pad: not before ~300 ms.
+    send({ event: "media", media: { payload: mulawMs(100) } });
+    const sentAt = Date.now();
+    send({ event: "mark", mark: { name: "padded" } });
+    await waitFor(() => marks().length >= 2, 1000);
+    const ackAfterMs = Date.now() - sentAt;
+    bridge.close();
+    close();
+    expect(ackAfterMs).toBeGreaterThanOrEqual(280);
+  });
+
   it("echoes a mark at once when no audio is queued, preserving streamSid and mark.name", async () => {
     const t = await openBridge();
     t.send({ event: "mark", mark: { name: "playback-done" } });
@@ -436,6 +478,19 @@ describe("mark", () => {
     expect(ackAfterMs).toBeLessThan(800);
   });
 
+  it("close() drops pending marks and their timer", async () => {
+    const t = await openBridge();
+    t.send({ event: "media", media: { payload: mulawMs(300) } });
+    t.send({ event: "mark", mark: { name: "never" } });
+    await waitFor(() => t.source.sent.length === 1);
+    expect(t.bridge.pendingPlayoutMs()).toBeGreaterThan(0);
+
+    t.close();
+    expect(t.bridge.pendingPlayoutMs()).toBe(0);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(t.marks()).toHaveLength(0);
+  });
+
   it("drops pending marks when the stream stops", async () => {
     const t = await openBridge();
     t.send({ event: "media", media: { payload: mulawMs(5000) } });
@@ -488,6 +543,39 @@ describe("clear", () => {
     expect(elapsed).toBeLessThan(500);
     expect((messages.filter((m: any) => m.event === "mark") as any[]).map((m) => m.mark.name)).toEqual(["m1", "m2"]);
     expect(bridge.pendingPlayoutMs()).toBe(0);
+  });
+
+  it("resets the playout clock, so audio queued after a clear is timed from scratch", async () => {
+    const port = nextPort();
+    const { messages, socket, close } = await botServer(port);
+    const source = new FakeBwSource();
+    const bridge = new TwilioStreamBridge({
+      botUrl: `ws://127.0.0.1:${port}`,
+      callSid: "CAreset",
+      accountSid: "ACreset",
+      source,
+    });
+    await bridge.ready();
+    const bot = await socket;
+    const send = (obj: object) => bot.send(JSON.stringify({ streamSid: bridge.streamSid, ...obj }));
+
+    // A stale second of audio, then the bot barges in and speaks 100 ms more.
+    send({ event: "media", media: { payload: mulawMs(1000) } });
+    send({ event: "clear" });
+    await waitFor(() => source.flushed === 1);
+    expect(bridge.pendingPlayoutMs()).toBe(0);
+
+    send({ event: "media", media: { payload: mulawMs(100) } });
+    const sentAt = Date.now();
+    send({ event: "mark", mark: { name: "after-clear" } });
+    await waitFor(() => messages.some((m: any) => m.event === "mark"), 1000);
+    const ackAfterMs = Date.now() - sentAt;
+    bridge.close();
+    close();
+
+    // ~100 ms, not ~1100 ms: the cleared second must not count.
+    expect(ackAfterMs).toBeGreaterThanOrEqual(80);
+    expect(ackAfterMs).toBeLessThan(600);
   });
 
   it("calls source.flush() when the bot sends a clear event", async () => {
