@@ -117,7 +117,11 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     children map to nested `<StreamParam/>` elements in order (Bandwidth allows
     at most 12; extras are dropped with a warning). Bandwidth echoes them in its
     `start` event as `streamParams`, and the bridge forwards them to the bot as
-    Twilio `customParameters`.
+    Twilio `customParameters`. Bandwidth sends no playback-complete signal, so
+    the bridge tracks playout by duration: a bot's `mark` is returned once the
+    mulaw audio queued before it has had time to play (8 bytes per ms), and a
+    `clear` empties the queue and returns every outstanding mark at once, as
+    Twilio does.
   - `Conference` — basic named conferences work, but `waitUrl` hold music has
     no Bandwidth equivalent, `beep` is only partially supported, and
     `startConferenceOnEnter`/`endConferenceOnExit`/`maxParticipants` have no

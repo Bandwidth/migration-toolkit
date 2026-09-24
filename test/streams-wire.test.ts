@@ -13,8 +13,12 @@ import { EventEmitter } from "node:events";
 import {
   TwilioStreamBridge,
   customParametersFromBwStart,
+  mulawPayloadDurationMs,
   type BwStreamSource,
 } from "../src/streams/bridge.js";
+
+/** Base64 mulaw silence of the given duration at 8 kHz (8 bytes per ms). */
+const mulawMs = (ms: number) => Buffer.alloc(ms * 8, 0xff).toString("base64");
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -325,9 +329,13 @@ describe("dtmf", () => {
 });
 
 // ─── mark ───────────────────────────────────────────────────────────────────
+//
+// VAPI-3990: the bridge used to echo a mark the instant it arrived, so a
+// mark-gated bot was told its utterance had finished while the audio was still
+// queued. Bandwidth sends no playback signal, so playout is tracked by duration.
 
 describe("mark", () => {
-  it("echoes mark back to the bot preserving streamSid and mark.name", async () => {
+  async function openBridge() {
     const port = nextPort();
     const { messages, socket, close } = await botServer(port);
     const source = new FakeBwSource();
@@ -339,31 +347,149 @@ describe("mark", () => {
     });
     await bridge.ready();
     const bot = await socket;
+    const send = (obj: object) => bot.send(JSON.stringify({ streamSid: bridge.streamSid, ...obj }));
+    const marks = () => messages.filter((m: any) => m.event === "mark") as any[];
+    return { bridge, source, messages, send, marks, close: () => (bridge.close(), close()) };
+  }
 
-    bot.send(
-      JSON.stringify({
-        event: "mark",
-        streamSid: bridge.streamSid,
-        mark: { name: "playback-done" },
-      })
-    );
+  it("mulawPayloadDurationMs: 8 kHz mono mulaw is 8 bytes per millisecond", () => {
+    expect(mulawPayloadDurationMs(mulawMs(20))).toBe(20);
+    expect(mulawPayloadDurationMs(mulawMs(1000))).toBe(1000);
+    expect(mulawPayloadDurationMs("")).toBe(0);
+  });
 
-    await waitFor(
-      () => (messages.filter((m: any) => m.event === "mark") as any[]).length >= 1
-    );
-    bridge.close();
-    close();
+  it("echoes a mark at once when no audio is queued, preserving streamSid and mark.name", async () => {
+    const t = await openBridge();
+    t.send({ event: "mark", mark: { name: "playback-done" } });
+    await waitFor(() => t.marks().length >= 1);
+    t.close();
 
-    const markMsg = messages.find((m: any) => m.event === "mark") as any;
-    expect(markMsg.event).toBe("mark");
-    expect(markMsg.streamSid).toBe(bridge.streamSid);
+    const markMsg = t.marks()[0];
+    expect(markMsg.streamSid).toBe(t.bridge.streamSid);
     expect(markMsg.mark).toEqual({ name: "playback-done" });
+    // Twilio numbers the marks it sends back like every other outbound message.
+    expect(markMsg.sequenceNumber).toBeDefined();
+  });
+
+  it("holds a mark until the audio queued before it has played out", async () => {
+    const t = await openBridge();
+    t.send({ event: "media", media: { payload: mulawMs(300) } });
+    const sentAt = Date.now();
+    t.send({ event: "mark", mark: { name: "turn-1" } });
+
+    // The bytes reach the Bandwidth side immediately, but the mark must not.
+    await waitFor(() => t.source.sent.length === 1);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(t.marks()).toHaveLength(0);
+    expect(t.bridge.pendingPlayoutMs()).toBeGreaterThan(100);
+
+    await waitFor(() => t.marks().length >= 1, 1000);
+    const ackAfterMs = Date.now() - sentAt;
+    t.close();
+
+    expect(t.marks()[0].mark).toEqual({ name: "turn-1" });
+    expect(ackAfterMs).toBeGreaterThanOrEqual(280);
+    expect(t.bridge.pendingPlayoutMs()).toBe(0);
+  });
+
+  it("pendingPlayoutMs reflects the bytes queued, and frames accumulate", async () => {
+    const t = await openBridge();
+    t.send({ event: "media", media: { payload: mulawMs(500) } });
+    t.send({ event: "media", media: { payload: mulawMs(500) } });
+    await waitFor(() => t.source.sent.length === 2);
+    const pending = t.bridge.pendingPlayoutMs();
+    t.close();
+    expect(pending).toBeGreaterThan(900);
+    expect(pending).toBeLessThanOrEqual(1000);
+  });
+
+  it("returns marks in order, each after its own preceding audio", async () => {
+    const t = await openBridge();
+    t.send({ event: "media", media: { payload: mulawMs(150) } });
+    t.send({ event: "mark", mark: { name: "a" } });
+    t.send({ event: "media", media: { payload: mulawMs(150) } });
+    t.send({ event: "mark", mark: { name: "b" } });
+
+    const seen: { name: string; at: number }[] = [];
+    await waitFor(() => {
+      for (const m of t.marks().slice(seen.length)) seen.push({ name: m.mark.name, at: Date.now() });
+      return seen.length >= 2;
+    }, 1500);
+    t.close();
+
+    expect(seen.map((s) => s.name)).toEqual(["a", "b"]);
+    expect(seen[1].at - seen[0].at).toBeGreaterThanOrEqual(100);
+  });
+
+  it("audio queued after a mark does not delay that mark", async () => {
+    const t = await openBridge();
+    t.send({ event: "media", media: { payload: mulawMs(100) } });
+    const sentAt = Date.now();
+    t.send({ event: "mark", mark: { name: "early" } });
+    t.send({ event: "media", media: { payload: mulawMs(5000) } });
+
+    await waitFor(() => t.marks().length >= 1, 1000);
+    const ackAfterMs = Date.now() - sentAt;
+    t.close();
+
+    expect(t.marks()[0].mark).toEqual({ name: "early" });
+    expect(ackAfterMs).toBeLessThan(800);
+  });
+
+  it("drops pending marks when the stream stops", async () => {
+    const t = await openBridge();
+    t.send({ event: "media", media: { payload: mulawMs(5000) } });
+    t.send({ event: "mark", mark: { name: "never" } });
+    await waitFor(() => t.source.sent.length === 1);
+
+    t.source.emit("stop");
+    await waitFor(() => t.messages.some((m: any) => m.event === "stop"));
+    await new Promise((r) => setTimeout(r, 50));
+    t.close();
+
+    expect(t.marks()).toHaveLength(0);
+    expect(t.bridge.pendingPlayoutMs()).toBe(0);
   });
 });
 
 // ─── clear ──────────────────────────────────────────────────────────────────
 
 describe("clear", () => {
+  it("empties the playout queue and returns every outstanding mark at once (Twilio semantics)", async () => {
+    const port = nextPort();
+    const { messages, socket, close } = await botServer(port);
+    const source = new FakeBwSource();
+    const bridge = new TwilioStreamBridge({
+      botUrl: `ws://127.0.0.1:${port}`,
+      callSid: "CAiii",
+      accountSid: "ACjjj",
+      source,
+    });
+    await bridge.ready();
+    const bot = await socket;
+    const send = (obj: object) => bot.send(JSON.stringify({ streamSid: bridge.streamSid, ...obj }));
+
+    // Five seconds queued, two marks behind it. Without the clear they would
+    // come back after ~5 s; the bot interrupting (barge-in) must not wait that long.
+    send({ event: "media", media: { payload: mulawMs(5000) } });
+    send({ event: "mark", mark: { name: "m1" } });
+    send({ event: "mark", mark: { name: "m2" } });
+    await waitFor(() => source.sent.length === 1);
+    expect(messages.filter((m: any) => m.event === "mark")).toHaveLength(0);
+
+    const clearedAt = Date.now();
+    send({ event: "clear" });
+    await waitFor(() => messages.filter((m: any) => m.event === "mark").length >= 2, 1000);
+    const elapsed = Date.now() - clearedAt;
+    bridge.close();
+    close();
+
+    expect(source.flushed).toBe(1);
+    expect(elapsed).toBeLessThan(500);
+    expect((messages.filter((m: any) => m.event === "mark") as any[]).map((m) => m.mark.name)).toEqual(["m1", "m2"]);
+    expect(bridge.pendingPlayoutMs()).toBe(0);
+  });
+
   it("calls source.flush() when the bot sends a clear event", async () => {
     const port = nextPort();
     const { socket, close } = await botServer(port);
