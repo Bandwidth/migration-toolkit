@@ -9,7 +9,25 @@ import type { EventEmitter } from "node:events";
  *
  * flush() is called when the bot sends a Twilio "clear" event, signalling that
  * buffered audio on the playout queue should be discarded.
+ *
+ * There is deliberately no playback-complete signal here: Bandwidth's
+ * StartStream protocol does not send one. The bridge tracks playout by
+ * duration instead (see TwilioStreamBridge.pendingPlayoutMs).
  */
+
+/** Bytes of 8 kHz mono mulaw per millisecond of audio: 8000 samples/s, 1 byte each. */
+const MULAW_BYTES_PER_MS = 8;
+
+/** Milliseconds of playback represented by a base64-encoded mulaw payload.
+ *  The decoded length is derived from the string so no per-frame Buffer is
+ *  allocated: 4 base64 chars encode 3 bytes, less one byte per '=' pad. */
+export function mulawPayloadDurationMs(payloadB64: string): number {
+  const len = payloadB64.length;
+  if (len === 0) return 0;
+  const pad = payloadB64.endsWith("==") ? 2 : payloadB64.endsWith("=") ? 1 : 0;
+  return (Math.floor((len * 3) / 4) - pad) / MULAW_BYTES_PER_MS;
+}
+
 export interface BwStreamSource extends EventEmitter {
   sendMedia(payloadB64: string): void;
   flush(): void;
@@ -26,6 +44,12 @@ export interface BridgeOpts {
    *  "start" event as `streamParams`; build them with customParametersFromBwStart. */
   customParameters?: Record<string, string>;
   source: BwStreamSource;
+  /** Extra delay, in ms, added to every mark's due time. The playout clock
+   *  starts when a frame reaches the bridge, but the caller hears it one-way
+   *  network latency plus Bandwidth's jitter buffer later, so marks otherwise
+   *  return slightly early in the same direction as the original bug. Default 0
+   *  until real measurements from VAPI-3991 give a value worth setting. */
+  playoutLatencyPadMs?: number;
 }
 
 /**
@@ -61,6 +85,18 @@ export class TwilioStreamBridge {
   /** Monotonically increasing counter for media frames only (chunk field). */
   private chunkSeq = 0;
   private readyPromise: Promise<void>;
+
+  // ── Playout clock ────────────────────────────────────────────────────────
+  // Twilio returns a bot's "mark" only once every media frame queued before it
+  // has finished playing on the call. Bandwidth gives us no playback signal, so
+  // we model the playout queue as a clock: each outbound frame extends
+  // `playoutEndAt` by its mulaw duration, and a mark becomes due at whatever
+  // `playoutEndAt` was when the mark arrived. Audio queued after a mark does not
+  // delay it. Marks are due in arrival order because the clock only moves
+  // forward between clears.
+  private playoutEndAt = 0;
+  private pendingMarks: { mark: unknown; dueAt: number }[] = [];
+  private markTimer: NodeJS.Timeout | undefined;
 
   constructor(private opts: BridgeOpts) {
     this.streamSid = "MZ" + randomBytes(16).toString("hex");
@@ -117,8 +153,9 @@ export class TwilioStreamBridge {
       });
     });
 
-    // BW network → bot: stream ended
+    // BW network → bot: stream ended. Anything still queued will never play.
     opts.source.on("stop", () => {
+      this.dropPendingMarks();
       this.send({
         event: "stop",
         sequenceNumber: String(++this.seq),
@@ -144,22 +181,36 @@ export class TwilioStreamBridge {
 
       switch ((msg as any).event) {
         case "media":
-          // Bot is sending audio to be played out on the call
+          // Bot is sending audio to be played out on the call. Extend the
+          // playout clock by the frame's duration before handing it on.
           if (msg.media && typeof (msg.media as any).payload === "string") {
-            this.opts.source.sendMedia((msg.media as any).payload as string);
+            const payload = (msg.media as any).payload as string;
+            const now = Date.now();
+            this.playoutEndAt = Math.max(now, this.playoutEndAt) + mulawPayloadDurationMs(payload);
+            this.opts.source.sendMedia(payload);
           }
           break;
 
-        case "mark":
-          // Echo the mark back to acknowledge playback completion.
-          // Real playout tracking comes with the live BW binding.
-          this.send({ event: "mark", streamSid: this.streamSid, mark: (msg as any).mark });
+        case "mark": {
+          // Per Twilio: the mark comes back when the audio queued before it has
+          // finished playing. Nothing queued means it comes back at once.
+          const pad = this.opts.playoutLatencyPadMs ?? 0;
+          const dueAt = this.playoutEndAt > Date.now() ? this.playoutEndAt + pad : this.playoutEndAt;
+          this.pendingMarks.push({ mark: (msg as any).mark, dueAt });
+          this.flushDueMarks();
           break;
+        }
 
-        case "clear":
-          // Flush buffered audio on the BW source's playout queue
+        case "clear": {
+          // Per Twilio: "empties all buffered audio and causes any mark messages
+          // to be sent back". Discard the queue, then return every outstanding
+          // mark immediately so a mark-gated bot is not left waiting forever.
           this.opts.source.flush();
+          const outstanding = this.pendingMarks;
+          this.dropPendingMarks();
+          for (const { mark } of outstanding) this.sendMark(mark);
           break;
+        }
       }
     });
   }
@@ -168,9 +219,45 @@ export class TwilioStreamBridge {
     return this.readyPromise;
   }
 
+  /** Milliseconds of bot audio still to play on the call, by the playout clock. */
+  pendingPlayoutMs(): number {
+    return Math.max(0, this.playoutEndAt - Date.now());
+  }
+
   close(): void {
+    this.dropPendingMarks();
     this.opts.source.close();
     this.ws.close();
+  }
+
+  /** Echo every mark whose audio has played out, then arm one timer for the next. */
+  private flushDueMarks(): void {
+    if (this.markTimer) {
+      clearTimeout(this.markTimer);
+      this.markTimer = undefined;
+    }
+    const now = Date.now();
+    while (this.pendingMarks.length && this.pendingMarks[0].dueAt <= now) {
+      this.sendMark(this.pendingMarks.shift()!.mark);
+    }
+    if (this.pendingMarks.length) {
+      const wait = this.pendingMarks[0].dueAt - now;
+      this.markTimer = setTimeout(() => this.flushDueMarks(), wait);
+      this.markTimer.unref?.();
+    }
+  }
+
+  private sendMark(mark: unknown): void {
+    this.send({ event: "mark", sequenceNumber: String(++this.seq), streamSid: this.streamSid, mark });
+  }
+
+  private dropPendingMarks(): void {
+    if (this.markTimer) {
+      clearTimeout(this.markTimer);
+      this.markTimer = undefined;
+    }
+    this.pendingMarks = [];
+    this.playoutEndAt = 0;
   }
 
   private send(obj: unknown): void {
