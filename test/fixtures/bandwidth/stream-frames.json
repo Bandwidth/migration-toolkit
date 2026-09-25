@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "captured": "2026-09-17",
+    "source": "start.metadata: live Bandwidth <StartStream mode=\"bidirectional\" tracks=\"inbound\"> on a real call, recorded by the local repro app. Field names, nesting, and the PCMU/8000 track format are exactly as received; ids redacted.",
+    "note": "streamParams follows the StartStream docs example; media and stop follow the docs' documented shapes; the media payload is 160 bytes (20 ms) of synthetic PCMU silence, not recorded audio. On 2026-09-25 a live inbound call ran end to end through /bw/stream with frame capture on: the real start, media, and stop frames matched these shapes field for field (Bandwidth orders eventType last, which the parser does not depend on), streamParams arrived as the flat map modelled here, and media frames were 160-byte inbound PCMU with sequenceNumber counting from \"1\". Those recorded frames are deliberately not checked in: they came from a personal line and this repo is public. To refresh from a shared test account, run a call with TRANSLATOR_CAPTURE_DIR set and copy <dir>/streams/*.jsonl.",
+    "redacted": [
+      "accountId",
+      "callId",
+      "streamId"
+    ]
+  },
+  "start": {
+    "eventType": "start",
+    "metadata": {
+      "accountId": "99XXXXX",
+      "callId": "c-xxxxxxxx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "streamId": "s-xxxxxxxx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "streamName": "connect-stream-1",
+      "tracks": [
+        {
+          "name": "inbound",
+          "mediaFormat": {
+            "encoding": "PCMU",
+            "sampleRate": 8000
+          }
+        }
+      ]
+    },
+    "streamParams": {
+      "callSid": "CA123",
+      "tenant": "acme"
+    }
+  },
+  "media": {
+    "eventType": "media",
+    "track": "inbound",
+    "payload": "/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////w==",
+    "sequenceNumber": "1"
+  },
+  "mediaOutbound": {
+    "eventType": "media",
+    "track": "outbound",
+    "payload": "/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////w==",
+    "sequenceNumber": "1"
+  },
+  "stop": {
+    "eventType": "stop",
+    "metadata": {
+      "accountId": "99XXXXX",
+      "callId": "c-xxxxxxxx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "streamId": "s-xxxxxxxx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "streamName": "connect-stream-1",
+      "tracks": [
+        {
+          "name": "inbound",
+          "mediaFormat": {
+            "encoding": "PCMU",
+            "sampleRate": 8000
+          }
+        }
+      ]
+    }
+  }
+}
