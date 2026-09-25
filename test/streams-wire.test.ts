@@ -121,7 +121,7 @@ describe("start message", () => {
     // Shape per the StartStream docs' start-event example.
     const bwStart = {
       eventType: "start",
-      metadata: { accountId: "9900778", callId: "c-abc", to: "+15550001111", from: "+15550002222" },
+      metadata: { accountId: "5555555", callId: "c-abc", to: "+15550001111", from: "+15550002222" },
       streamParams: { callSid: "CA123", tenant: "acme" },
     };
     const port = nextPort();
