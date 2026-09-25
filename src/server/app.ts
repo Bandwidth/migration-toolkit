@@ -48,6 +48,9 @@ export interface ServerConfig {
   captureDir?: string;
   /** How long a Bandwidth StartStream WebSocket may sit without a "start" event before it is closed. Default 5000. */
   streamStartTimeoutMs?: number;
+  /** How long the bridge waits for the bot's WebSocket handshake before giving up and ending the
+   *  Bandwidth stream. Bounds a bot that accepts TCP but never completes the upgrade. Default 10000. */
+  streamBotConnectTimeoutMs?: number;
   /** Passed to TwilioStreamBridge.playoutLatencyPadMs for every stream. Default 0. */
   streamPlayoutLatencyPadMs?: number;
 }
@@ -163,6 +166,10 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
   };
 
   async function handleStreamUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+    // Node hands over the raw socket with no error listener; ws attaches one only
+    // inside handleUpgrade, and the egress check below can await a DNS lookup for
+    // seconds. A reset in that window would otherwise be an uncaught exception.
+    socket.on("error", () => socket.destroy());
     const url = new URL(req.url ?? "/", "http://placeholder.invalid");
     if (url.pathname !== "/bw/stream") return rejectUpgrade(socket, 404, "Not Found");
     if (!safeEqual(req.headers.authorization ?? "", expectedWebhookAuth)) {
@@ -209,6 +216,7 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
             customParameters: customParametersFromBwStart(start.raw),
             source,
             playoutLatencyPadMs: config.streamPlayoutLatencyPadMs,
+            connectTimeoutMs: config.streamBotConnectTimeoutMs,
           });
           const b = bridge;
           bridges.add(b);
@@ -233,9 +241,15 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
   app.server.on("upgrade", (req, socket, head) => {
     void handleStreamUpgrade(req, socket, head);
   });
-  app.addHook("onClose", async () => {
+  // preClose, not onClose: Fastify waits for the HTTP server's connections to
+  // drain before onClose runs, and an upgraded socket counts as one of them, so
+  // it must be torn down first or close() would wait for Bandwidth to hang up.
+  app.addHook("preClose", async () => {
     for (const b of bridges) b.close();
     bridges.clear();
+    // In noServer mode close() does not end established clients, and a socket
+    // that upgraded but has not sent "start" yet has no bridge to close it.
+    for (const client of streamServer.clients) client.terminate();
     streamServer.close();
   });
 

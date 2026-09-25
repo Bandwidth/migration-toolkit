@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { WebSocketServer, WebSocket } from "ws";
-import type { AddressInfo } from "node:net";
+import { createServer, type AddressInfo } from "node:net";
 import { readFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -189,6 +189,29 @@ describe("/bw/stream end to end", () => {
     await app.close();
   });
 
+  it("ends the Bandwidth stream when the bot accepts TCP but never completes the WebSocket handshake", async () => {
+    // A black-hole bot: accepts the connection and says nothing. Without the
+    // handshake timeout the stream would hang until the OS gave up.
+    const blackHole = createServer((sock) => sock.on("error", () => {}));
+    await new Promise<void>((r) => blackHole.listen(0, "127.0.0.1", r));
+    const holePort = (blackHole.address() as AddressInfo).port;
+
+    const app = makeApp(config({ streamBotConnectTimeoutMs: 300 }));
+    const port = await listen(app);
+    const bw = bandwidthClient(port, `ws://127.0.0.1:${holePort}/bot`);
+    await upgradeStatus(bw.ws);
+    const sentAt = Date.now();
+    const bwClosed = new Promise((r) => bw.ws.once("close", r));
+    bw.send(frames.start);
+    await bwClosed;
+    // Long enough to be the timeout, not an immediate refusal; generous upper bound for slow CI.
+    expect(Date.now() - sentAt).toBeGreaterThanOrEqual(250);
+    expect(Date.now() - sentAt).toBeLessThan(5000);
+
+    blackHole.close();
+    await app.close();
+  });
+
   it("closes a socket that sends no start event within the timeout", async () => {
     const app = makeApp();
     const port = await listen(app);
@@ -198,9 +221,22 @@ describe("/bw/stream end to end", () => {
     const openedAt = Date.now();
     await new Promise((r) => bw.ws.once("close", r));
     expect(Date.now() - openedAt).toBeGreaterThanOrEqual(250);
-    expect(Date.now() - openedAt).toBeLessThan(2000);
+    // Upper bound is deliberately loose: it only guards against "never closes".
+    expect(Date.now() - openedAt).toBeLessThan(5000);
     bot.close();
     await app.close();
+  });
+
+  it("app.close() terminates a stream that upgraded but has not sent start yet", async () => {
+    const app = makeApp(config({ streamStartTimeoutMs: 60_000 }));
+    const port = await listen(app);
+    const bw = bandwidthClient(port, "ws://127.0.0.1:9/bot");
+    await upgradeStatus(bw.ws);
+    const bwClosed = new Promise((r) => bw.ws.once("close", r));
+    const closingAt = Date.now();
+    await app.close();
+    await bwClosed;
+    expect(Date.now() - closingAt).toBeLessThan(2000);
   });
 });
 
@@ -284,7 +320,7 @@ describe("translator side of the stream route", () => {
 });
 
 describe("stream frame capture", () => {
-  it("writes start, media, and stop frames to <captureDir>/streams/*.jsonl when captureDir is set", async () => {
+  it("writes start, the first 10 media frames, and stop to <captureDir>/streams/*.jsonl", async () => {
     const dir = mkdtempSync(join(tmpdir(), "stream-capture-"));
     try {
       const app = makeApp(config({ captureDir: dir }));
@@ -294,7 +330,9 @@ describe("stream frame capture", () => {
       await upgradeStatus(bw.ws);
       bw.send(frames.start);
       const botWs = await bot.socket;
-      bw.send(frames.media);
+      // 12 frames sent; the cap keeps 10 so a capture stays small.
+      for (let i = 1; i <= 12; i++) bw.send({ ...frames.media, sequenceNumber: String(i) });
+      await waitFor(() => bot.messages.filter((m) => m.event === "media").length === 12);
       const botClosed = new Promise((r) => botWs.once("close", r));
       bw.send(frames.stop);
       await botClosed;
@@ -306,8 +344,13 @@ describe("stream frame capture", () => {
       expect(files).toHaveLength(1);
       expect(files[0]).toMatch(/^[0-9a-f]{16}\.jsonl$/);
       const lines = readFileSync(join(dir, "streams", files[0]), "utf8").trim().split("\n").map((l) => JSON.parse(l));
-      expect(lines.map((l) => l.eventType)).toEqual(["start", "media", "stop"]);
+      expect(lines[0].eventType).toBe("start");
       expect(lines[0].metadata.streamId).toBe(frames.start.metadata.streamId);
+      expect(lines.filter((l) => l.eventType === "media").map((l) => l.sequenceNumber)).toEqual(
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+      );
+      expect(lines.at(-1).eventType).toBe("stop");
+      expect(lines).toHaveLength(12);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

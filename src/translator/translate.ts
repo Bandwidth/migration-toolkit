@@ -188,6 +188,10 @@ function stampCallbackAuth(els: XmlEl[], auth: { username: string; password: str
       el.attrs.username = auth.username;
       el.attrs.password = auth.password;
     }
+    // INVARIANT: callbackAuth is only passed together with the server's rewriter,
+    // which points every "stream" URL at the translator's own /bw/stream. These
+    // are the translator's webhook credentials; a rewriter that ever left the
+    // customer's bot URL in place would hand them to a third party.
     if (el.name === "StartStream" && el.attrs?.destination !== undefined) {
       el.attrs.destinationUsername = auth.username;
       el.attrs.destinationPassword = auth.password;

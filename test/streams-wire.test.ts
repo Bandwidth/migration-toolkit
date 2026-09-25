@@ -192,6 +192,31 @@ describe("start message", () => {
   });
 });
 
+// ─── bot connect timeout ────────────────────────────────────────────────────
+
+describe("bot connect timeout", () => {
+  it("ready() rejects when the bot accepts TCP but never completes the handshake", async () => {
+    const { createServer } = await import("node:net");
+    const blackHole = createServer((sock) => sock.on("error", () => {}));
+    await new Promise<void>((r) => blackHole.listen(0, "127.0.0.1", r));
+    const port = (blackHole.address() as import("node:net").AddressInfo).port;
+
+    const source = new FakeBwSource();
+    const bridge = new TwilioStreamBridge({
+      botUrl: `ws://127.0.0.1:${port}`,
+      callSid: "CAhole",
+      accountSid: "AChole",
+      source,
+      connectTimeoutMs: 200,
+    });
+    const startedAt = Date.now();
+    await expect(bridge.ready()).rejects.toThrow(/handshake/i);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(150);
+    bridge.close();
+    blackHole.close();
+  });
+});
+
 // ─── stop message ───────────────────────────────────────────────────────────
 
 describe("stop message", () => {

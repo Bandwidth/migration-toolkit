@@ -26,6 +26,9 @@ export function captureStreamFrame(dir: string, streamKey: string, rawFrame: str
     const n = capturedMedia.get(file) ?? 0;
     if (n >= MAX_CAPTURED_MEDIA_FRAMES) return undefined;
     capturedMedia.set(file, n + 1);
+  } else if (/"eventType"\s*:\s*"stop"/.test(rawFrame)) {
+    // The stream is over; forget its tally so the map does not grow per call.
+    capturedMedia.delete(file);
   }
   mkdirSync(streamsDir, { recursive: true, mode: 0o700 });
   appendFileSync(file, rawFrame.replace(/\r?\n/g, " ") + "\n", { mode: 0o600 });

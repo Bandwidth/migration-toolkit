@@ -9,6 +9,14 @@ function env(name: string): string {
 
 const bwEnv = process.env.BW_ENVIRONMENT === "test" ? "test" : "prod";
 
+/** Optional millisecond setting; unset or non-numeric leaves the code default in place. */
+function optionalMs(name: string): number | undefined {
+  const v = process.env[name];
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 const app = buildApp(
   {
     accountSid: env("TRANSLATOR_ACCOUNT_SID"),
@@ -20,9 +28,9 @@ const app = buildApp(
     allowPrivateEgress: process.env.EGRESS_ALLOW_PRIVATE === "1",
     egressAllowHosts: process.env.EGRESS_ALLOW_HOSTS?.split(",").map((s) => s.trim()).filter(Boolean),
     captureDir: process.env.TRANSLATOR_CAPTURE_DIR,
-    streamPlayoutLatencyPadMs: process.env.STREAM_PLAYOUT_LATENCY_PAD_MS
-      ? Number(process.env.STREAM_PLAYOUT_LATENCY_PAD_MS)
-      : undefined,
+    streamPlayoutLatencyPadMs: optionalMs("STREAM_PLAYOUT_LATENCY_PAD_MS"),
+    streamStartTimeoutMs: optionalMs("STREAM_START_TIMEOUT_MS"),
+    streamBotConnectTimeoutMs: optionalMs("STREAM_BOT_CONNECT_TIMEOUT_MS"),
   },
   {
     fetchImpl: fetch,

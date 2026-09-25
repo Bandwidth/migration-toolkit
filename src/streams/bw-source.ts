@@ -127,6 +127,7 @@ export class BwWebSocketSource extends EventEmitter implements BwStreamSource {
         cleanup();
         reject(new Error(`no start event within ${timeoutMs} ms`));
       }, timeoutMs);
+      timer.unref?.(); // never the only thing keeping the process (or a test) alive
       const onStart = (s: BwStreamStart) => {
         cleanup();
         resolve(s);

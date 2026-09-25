@@ -76,9 +76,13 @@ Set these env vars (the server reads **these exact names** — note the checked-
 `PUBLIC_BASE_URL`. The BW Voice Application's callback (set in Phase 2) must point
 at `<PUBLIC_BASE_URL>/bw/initiate`. If the customer app uses `<Connect><Stream>`,
 the host must also pass WebSocket upgrades through to the translator at
-`/bw/stream` (ngrok and cloudflared do by default). Optional:
-`STREAM_PLAYOUT_LATENCY_PAD_MS` delays mark acknowledgements to the bot by that
-many ms to absorb network and jitter-buffer latency; default 0.
+`/bw/stream` (ngrok and cloudflared do by default). Optional stream tuning, all
+in ms: `STREAM_PLAYOUT_LATENCY_PAD_MS` delays mark acknowledgements to the bot
+to absorb network and jitter-buffer latency (default 0);
+`STREAM_START_TIMEOUT_MS` bounds the wait for Bandwidth's `start` event
+(default 5000); `STREAM_BOT_CONNECT_TIMEOUT_MS` bounds the bot's WebSocket
+handshake (default 10000). Either timeout ends the Bandwidth stream so the
+call's BXML moves on.
 
 ### Phase 5 — Verify
 ```bash
