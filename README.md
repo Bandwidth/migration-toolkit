@@ -117,7 +117,8 @@ real calls.
 | Record (+ `recordingStatusCallback`) | ✅ | Live |
 | Dial → Number / SIP | ✅ | Live |
 | Dial → Conference (mute + events; no hold music / lifecycle) | ⚠️ | Live |
-| Connect/Start/Stop Stream, Start/Stop Transcription | ✅ | Unit |
+| Connect → Stream (bidirectional, via the Media Streams bridge) | ✅ | Live |
+| Start/Stop Stream (fork), Start/Stop Transcription | ✅ | Unit |
 | Reject, Refer (SIP) | ⚠️ | Unit |
 | Queue, Client, Enqueue, Leave, Pay | ❌ | — (no BW primitive — fail loudly) |
 
@@ -128,7 +129,7 @@ real calls.
 | List / fetch / download recordings; pause-resume | ✅ | Live/Unit |
 | Status callback (call completion) | ✅ | Unit |
 | Recording callback (`recordingStatusCallback`) | ✅ | Unit |
-| Media Streams bridge (AI-voice path) | ✅ | Unit |
+| Media Streams bridge (AI-voice path) | ✅ | Live |
 
 Number provisioning (search/order/activate) isn't part of this toolkit — it's
 handled by the [`band` CLI](#pairs-with-the-band-cli); see the Phase 2 runbook
