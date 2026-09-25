@@ -1,6 +1,12 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import formbody from "@fastify/formbody";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
+import { randomUUID } from "node:crypto";
+import { WebSocketServer } from "ws";
 import { translateTwiml, type UrlKind } from "../translator/translate.js";
+import { TwilioStreamBridge, customParametersFromBwStart } from "../streams/bridge.js";
+import { BwWebSocketSource } from "../streams/bw-source.js";
 import { bxmlDocument } from "../xml/build-xml.js";
 import {
   initiateParams,
@@ -9,7 +15,7 @@ import {
   recordingStatusParams,
   postToCustomer,
 } from "../twilio/egress.js";
-import { EgressBlockedError } from "../twilio/egress-guard.js";
+import { EgressBlockedError, assertPublicUrl } from "../twilio/egress-guard.js";
 import { toCallSid, toRecordingSid } from "../twilio/call-sid.js";
 import { createdCallResource, bwStateToTwilioStatus, twilioErrors } from "../twilio/call-resource.js";
 import { serverErrors } from "./errors.js";
@@ -23,7 +29,7 @@ import { CallStore, type CallRecord } from "./call-store.js";
 import { isSafeBwId, type BwClient } from "../bw/client.js";
 import { checkReadiness } from "./readiness.js";
 import { safeEqual } from "./safe-equal.js";
-import { captureTwiml } from "./capture.js";
+import { captureTwiml, captureStreamFrame } from "./capture.js";
 
 export interface ServerConfig {
   accountSid: string;
@@ -37,8 +43,13 @@ export interface ServerConfig {
   /** Basic-auth credentials Bandwidth presents on inbound webhooks (must match the app's CallbackCreds). */
   webhookUser: string;
   webhookPassword: string;
-  /** Opt-in dir to persist each customer TwiML response for the later BXML Generator. Undefined → no capture. */
+  /** Opt-in dir to persist each customer TwiML response for the later BXML Generator, and
+   *  raw Bandwidth StartStream frames under <dir>/streams/. Undefined → no capture. */
   captureDir?: string;
+  /** How long a Bandwidth StartStream WebSocket may sit without a "start" event before it is closed. Default 5000. */
+  streamStartTimeoutMs?: number;
+  /** Passed to TwilioStreamBridge.playoutLatencyPadMs for every stream. Default 0. */
+  streamPlayoutLatencyPadMs?: number;
 }
 
 export interface ServerDeps {
@@ -110,6 +121,14 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
   const authOk = (req: FastifyRequest) => safeEqual(req.headers.authorization ?? "", expectedAuth);
 
+  // The WebSocket form of PUBLIC_BASE_URL: Bandwidth's StartStream destination
+  // must be ws(s)://, so https → wss and http → ws (local dev).
+  const publicWsBase = (() => {
+    const u = new URL(config.publicBaseUrl);
+    u.protocol = u.protocol === "http:" ? "ws:" : "wss:";
+    return u.toString().replace(/\/$/, "");
+  })();
+
   const rewriter = (base: string) => (url: string, kind: UrlKind) => {
     const absolute = new URL(url, base).toString();
     // Recording-available events are async, fire-and-forget (no BXML continuation),
@@ -117,8 +136,108 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     if (kind === "recordingStatus") {
       return `${config.publicBaseUrl}/bw/recording-status?cb=${encodeURIComponent(absolute)}`;
     }
+    // A Twilio <Stream url> is the customer's bot. Bandwidth speaks its own
+    // StartStream protocol, so the stream must come to us first; /bw/stream
+    // bridges it to the bot in Twilio's Media Streams protocol.
+    if (kind === "stream") {
+      return `${publicWsBase}/bw/stream?dest=${encodeURIComponent(absolute)}`;
+    }
     return `${config.publicBaseUrl}/bw/continue?next=${encodeURIComponent(absolute)}`;
   };
+
+  // ── Media Streams: Bandwidth → /bw/stream → TwilioStreamBridge → bot ───────
+  // Fastify has no WebSocket routing of its own, so the HTTP upgrade is taken
+  // off the underlying server and handed to ws. The upgrade must carry the same
+  // Basic-auth credentials as the /bw/* webhooks (the translator stamps them on
+  // StartStream as destinationUsername/destinationPassword), and `dest` goes
+  // through the egress guard like any customer-supplied URL. Once Bandwidth's
+  // "start" event arrives, a bridge is built per stream; caller audio is held
+  // until the bot's socket is open so the first words are not lost.
+  const streamServer = new WebSocketServer({ noServer: true });
+  const bridges = new Set<TwilioStreamBridge>();
+
+  const rejectUpgrade = (socket: Duplex, status: number, reason: string, extraHeaders = ""): void => {
+    if (socket.destroyed) return;
+    socket.write(`HTTP/1.1 ${status} ${reason}\r\n${extraHeaders}Connection: close\r\nContent-Length: 0\r\n\r\n`);
+    socket.destroy();
+  };
+
+  async function handleStreamUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+    const url = new URL(req.url ?? "/", "http://placeholder.invalid");
+    if (url.pathname !== "/bw/stream") return rejectUpgrade(socket, 404, "Not Found");
+    if (!safeEqual(req.headers.authorization ?? "", expectedWebhookAuth)) {
+      return rejectUpgrade(socket, 401, "Unauthorized", "WWW-Authenticate: Basic\r\n");
+    }
+    const dest = url.searchParams.get("dest");
+    if (!dest) return rejectUpgrade(socket, 400, "Bad Request");
+    try {
+      await assertPublicUrl(dest, {
+        allowPrivate: config.allowPrivateEgress,
+        allowHosts: config.egressAllowHosts,
+        schemes: ["ws:", "wss:"],
+      });
+    } catch (err) {
+      app.log.error({ dest, err }, "stream dest blocked");
+      return err instanceof EgressBlockedError
+        ? rejectUpgrade(socket, 400, "Bad Request")
+        : rejectUpgrade(socket, 500, "Internal Server Error");
+    }
+    if (socket.destroyed) return;
+
+    streamServer.handleUpgrade(req, socket, head, (ws) => {
+      // Per-connection key for capture; never derived from Bandwidth input.
+      const captureKey = randomUUID();
+      const source = new BwWebSocketSource(ws, {
+        onFrame: config.captureDir
+          ? (raw) => {
+              try {
+                captureStreamFrame(config.captureDir!, captureKey, raw);
+              } catch (err) {
+                app.log.error({ err }, "stream capture failed");
+              }
+            }
+          : undefined,
+      });
+      let bridge: TwilioStreamBridge | undefined;
+      source
+        .waitForStart(config.streamStartTimeoutMs ?? 5000)
+        .then((start) => {
+          bridge = new TwilioStreamBridge({
+            botUrl: dest,
+            callSid: toCallSid(start.callId),
+            accountSid: config.accountSid,
+            customParameters: customParametersFromBwStart(start.raw),
+            source,
+            playoutLatencyPadMs: config.streamPlayoutLatencyPadMs,
+          });
+          const b = bridge;
+          bridges.add(b);
+          source.once("stop", () => bridges.delete(b));
+          app.log.info({ callId: start.callId, streamId: start.streamId, dest }, "stream bridge started");
+          return b.ready();
+        })
+        .then(() => source.release())
+        .catch((err) => {
+          // No start, or the bot could not be reached: end the Bandwidth stream so
+          // the <StopStream wait="true"> returns and the call's BXML moves on.
+          app.log.error({ dest, err }, "stream bridge setup failed");
+          if (bridge) {
+            bridges.delete(bridge);
+            bridge.close();
+          }
+          source.close();
+        });
+    });
+  }
+
+  app.server.on("upgrade", (req, socket, head) => {
+    void handleStreamUpgrade(req, socket, head);
+  });
+  app.addHook("onClose", async () => {
+    for (const b of bridges) b.close();
+    bridges.clear();
+    streamServer.close();
+  });
 
   function errorBxml(verbs: string[]): string {
     return bxmlDocument([

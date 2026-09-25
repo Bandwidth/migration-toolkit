@@ -178,12 +178,19 @@ const CALLBACK_URL_ATTRS = [
 
 /** Walks the built element tree and stamps username/password onto any element
  *  carrying a rewritten translator callback URL, so Bandwidth Basic-auths the
- *  continuation request instead of hitting it unauthenticated. */
+ *  continuation request instead of hitting it unauthenticated. A StartStream's
+ *  destination is the translator's own /bw/stream WebSocket after rewriting, so
+ *  it gets the same credentials as destinationUsername/destinationPassword,
+ *  which Bandwidth presents as the Authorization header on the upgrade. */
 function stampCallbackAuth(els: XmlEl[], auth: { username: string; password: string }): void {
   for (const el of els) {
     if (el.attrs && CALLBACK_URL_ATTRS.some((a) => el.attrs![a] !== undefined)) {
       el.attrs.username = auth.username;
       el.attrs.password = auth.password;
+    }
+    if (el.name === "StartStream" && el.attrs?.destination !== undefined) {
+      el.attrs.destinationUsername = auth.username;
+      el.attrs.destinationPassword = auth.password;
     }
     if (el.children) {
       const childEls = el.children.filter(

@@ -168,6 +168,14 @@ export class TwilioStreamBridge {
       this.ws.close();
     });
 
+    // Bot hung up its side. On Twilio that ends <Connect> and TwiML resumes
+    // after it; here, closing the Bandwidth socket ends the StartStream so the
+    // translator's <StopStream wait="true"> returns and BXML resumes likewise.
+    this.ws.on("close", () => {
+      this.dropPendingMarks();
+      this.opts.source.close();
+    });
+
     // Bot → bridge inbound message handler. The bot only ever sends
     // media / mark / clear back to us (per Twilio's protocol).
     this.ws.on("message", (data) => {

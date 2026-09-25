@@ -198,7 +198,7 @@ All translation is driven by one declarative compatibility matrix (`src/matrix/t
 ```
 src/translator          TwiML → BXML translation
 src/twilio              Twilio-shaped REST facade + signed webhooks (egress)
-src/streams             Media Streams bridge
+src/streams             Media Streams bridge (Twilio protocol to the bot) + Bandwidth StartStream source
 src/server              the proxy (Fastify) wiring it together, readiness check (/readyz, npm run doctor)
 src/compatibility-check static migration-complexity report (npm run compatibility-check)
 src/bxml-generator      batch BXML generation + coverage report (npm run bxml-generator; see AGENTS.md Phase 1)

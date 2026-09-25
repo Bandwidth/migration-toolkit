@@ -20,6 +20,9 @@ const app = buildApp(
     allowPrivateEgress: process.env.EGRESS_ALLOW_PRIVATE === "1",
     egressAllowHosts: process.env.EGRESS_ALLOW_HOSTS?.split(",").map((s) => s.trim()).filter(Boolean),
     captureDir: process.env.TRANSLATOR_CAPTURE_DIR,
+    streamPlayoutLatencyPadMs: process.env.STREAM_PLAYOUT_LATENCY_PAD_MS
+      ? Number(process.env.STREAM_PLAYOUT_LATENCY_PAD_MS)
+      : undefined,
   },
   {
     fetchImpl: fetch,
