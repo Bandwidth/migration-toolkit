@@ -50,7 +50,13 @@ export interface BridgeOpts {
    *  return slightly early in the same direction as the original bug. Default 0
    *  until real measurements from VAPI-3991 give a value worth setting. */
   playoutLatencyPadMs?: number;
+  /** Bot WebSocket handshake timeout in ms; ready() rejects when it elapses. Default 10000.
+   *  Without it a bot that accepts TCP but never answers the upgrade holds the stream
+   *  open until the OS gives up, which can be a minute or more of silence for the caller. */
+  connectTimeoutMs?: number;
 }
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 
 /**
  * Map Bandwidth's StartStream WebSocket "start" event to Twilio `customParameters`.
@@ -100,7 +106,7 @@ export class TwilioStreamBridge {
 
   constructor(private opts: BridgeOpts) {
     this.streamSid = "MZ" + randomBytes(16).toString("hex");
-    this.ws = new WebSocket(opts.botUrl);
+    this.ws = new WebSocket(opts.botUrl, { handshakeTimeout: opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS });
     this.readyPromise = new Promise((resolve, reject) => {
       this.ws.on("open", () => {
         // 1. connected — protocol handshake (no sequenceNumber per Twilio spec)
@@ -166,6 +172,14 @@ export class TwilioStreamBridge {
         },
       });
       this.ws.close();
+    });
+
+    // Bot hung up its side. On Twilio that ends <Connect> and TwiML resumes
+    // after it; here, closing the Bandwidth socket ends the StartStream so the
+    // translator's <StopStream wait="true"> returns and BXML resumes likewise.
+    this.ws.on("close", () => {
+      this.dropPendingMarks();
+      this.opts.source.close();
     });
 
     // Bot → bridge inbound message handler. The bot only ever sends

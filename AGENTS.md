@@ -74,7 +74,15 @@ Set these env vars (the server reads **these exact names** — note the checked-
 ### Phase 4 — Deploy
 🧍 **Human required:** provide a public HTTPS host (or tunnel) for
 `PUBLIC_BASE_URL`. The BW Voice Application's callback (set in Phase 2) must point
-at `<PUBLIC_BASE_URL>/bw/initiate`.
+at `<PUBLIC_BASE_URL>/bw/initiate`. If the customer app uses `<Connect><Stream>`,
+the host must also pass WebSocket upgrades through to the translator at
+`/bw/stream` (ngrok and cloudflared do by default). Optional stream tuning, all
+in ms: `STREAM_PLAYOUT_LATENCY_PAD_MS` delays mark acknowledgements to the bot
+to absorb network and jitter-buffer latency (default 0);
+`STREAM_START_TIMEOUT_MS` bounds the wait for Bandwidth's `start` event
+(default 5000); `STREAM_BOT_CONNECT_TIMEOUT_MS` bounds the bot's WebSocket
+handshake (default 10000). Either timeout ends the Bandwidth stream so the
+call's BXML moves on.
 
 ### Phase 5 — Verify
 ```bash
@@ -112,8 +120,17 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     after the stream ends, as on Twilio. A stream name is generated when the
     TwiML omits one. `ConversationRelay` and `VirtualAgent` are unsupported
     (separate IoV).
-  - `Stream` — Twilio's WS message schema is emulated by the translator's stream
-    bridge; live Bandwidth-side binding requires fixture capture. `<Parameter>`
+  - `Stream` — the translator rewrites the Twilio `<Stream url>` (the customer's
+    bot) to `wss://<PUBLIC_BASE_URL>/bw/stream?dest=<bot url>`, so Bandwidth's
+    StartStream WebSocket lands on the translator, which bridges it to the bot in
+    Twilio's Media Streams protocol (`src/streams/bw-source.ts` speaks Bandwidth's
+    side, `src/streams/bridge.ts` Twilio's). The upgrade requires the same
+    Basic-auth credentials as the `/bw/*` webhooks, stamped on `StartStream` as
+    `destinationUsername`/`destinationPassword`, and `dest` passes the egress
+    guard. Only the inbound (caller) track is relayed; Bandwidth delivers no DTMF
+    over the media socket. With `TRANSLATOR_CAPTURE_DIR` set, raw Bandwidth
+    frames are written to `<dir>/streams/*.jsonl` (start, first 10 media, stop)
+    to refresh `test/fixtures/bandwidth/stream-frames.json`. `<Parameter>`
     children map to nested `<StreamParam/>` elements in order (Bandwidth allows
     at most 12; extras are dropped with a warning). Bandwidth echoes them in its
     `start` event as `streamParams`, and the bridge forwards them to the bot as
