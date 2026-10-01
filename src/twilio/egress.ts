@@ -61,6 +61,73 @@ export function gatherParams(
   return p;
 }
 
+/**
+ * Twilio DialCallStatus from a Bandwidth transfer cause. The dialed leg's own
+ * transferDisconnect cause is preferred; the parent's transferComplete cause
+ * is the fallback. Bandwidth documents the list as non-exhaustive, so anything
+ * unrecognized is "failed", which is what Twilio reports for an unroutable call.
+ */
+export function bwCauseToDialCallStatus(cause: string | undefined): string {
+  switch (cause) {
+    case "hangup":
+      return "completed";
+    case "busy":
+    case "rejected":
+      return "busy";
+    case "timeout":
+      return "no-answer";
+    case "cancel":
+      return "canceled";
+    default:
+      return "failed";
+  }
+}
+
+/**
+ * Twilio <Dial action> params, from Bandwidth's transferComplete (parent call)
+ * joined with the dialed leg's transferDisconnect when it has arrived. Without
+ * the leg, DialCallSid and DialCallDuration are omitted rather than invented.
+ */
+export function dialActionParams(
+  call: CallRecord,
+  accountSid: string,
+  result: {
+    dialCallStatus: string;
+    bridged: boolean;
+    dialCallSid?: string;
+    durationSec?: number;
+  },
+): Record<string, string> {
+  const p: Record<string, string> = {
+    ...baseParams(call, accountSid),
+    CallStatus: "in-progress",
+    DialCallStatus: result.dialCallStatus,
+    DialBridged: result.bridged ? "true" : "false",
+  };
+  if (result.dialCallSid) p.DialCallSid = result.dialCallSid;
+  if (result.durationSec !== undefined) p.DialCallDuration = String(result.durationSec);
+  return p;
+}
+
+/**
+ * Twilio <Record action> params from Bandwidth's recordComplete. Twilio also
+ * sends Digits (the key that stopped the recording); Bandwidth's event has no
+ * such field, so it is omitted.
+ */
+export function recordActionParams(
+  call: CallRecord,
+  accountSid: string,
+  rec: { recordingSid: string; recordingUrl: string; durationSec: number },
+): Record<string, string> {
+  return {
+    ...baseParams(call, accountSid),
+    CallStatus: "in-progress",
+    RecordingUrl: rec.recordingUrl,
+    RecordingSid: rec.recordingSid,
+    RecordingDuration: String(rec.durationSec),
+  };
+}
+
 export function statusParams(
   call: CallRecord,
   accountSid: string,

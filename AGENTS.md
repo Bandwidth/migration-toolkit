@@ -106,9 +106,24 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
   - `Reject` — maps to `Hangup`, but Bandwidth answers before hanging up, so the
     caller may be billed for a short call.
   - `Dial` — `Number`/`Sip` nouns map to `Transfer`, `Conference` noun maps to
-    `Conference`; the `Queue` and `Client` nouns are unsupported, and deep Dial
-    semantics (`answerOnBridge`, child-call status propagation) are not
-    replicated.
+    `Conference`; the `Queue` and `Client` nouns are unsupported, and
+    `answerOnBridge` is not replicated. The Dial `action` receives Twilio's
+    `DialCallStatus` and `DialBridged` mapped from Bandwidth's transfer result;
+    `DialCallSid` and `DialCallDuration` come from the dialed leg's
+    `transferDisconnect` event, which the translator receives at
+    `/bw/transfer-leg` and joins to the parent's `transferComplete` (waiting up
+    to `transferLegWaitMs`, default 400 ms, since Bandwidth documents no
+    ordering between the two). As on Twilio, a caller hangup during the
+    transfer ends the session without requesting the action.
+  - `Gather` — a Gather that ends with no digits or speech does **not** request
+    the action (Twilio semantics): the translator remembers each call's last
+    TwiML document and re-translates the verbs after that Gather. Set
+    `actionOnEmptyResult="true"` to request the action with `Digits=""` instead.
+    On a translator instance that has not seen the document (restart, second
+    replica) the action is requested as a fallback.
+  - `Record` — the `action` receives `RecordingUrl`, `RecordingSid`, and
+    `RecordingDuration` from Bandwidth's `recordComplete`; Bandwidth's event has
+    no equivalent of Twilio's `Digits` (the key that stopped the recording).
   - `Start` — the `Transcription` noun maps to `StartTranscription`; the
     `Siprec` and `VirtualAgent` nouns are unsupported.
   - `Refer` — Bandwidth only honors `Refer` on inbound SIP URI calls, so a PSTN

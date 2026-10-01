@@ -4,7 +4,12 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
-import { translateTwiml, type UrlKind } from "../translator/translate.js";
+import {
+  translateTwiml,
+  type UrlKind,
+  type RewriteContext,
+  type TranslateOptions,
+} from "../translator/translate.js";
 import { TwilioStreamBridge, customParametersFromBwStart } from "../streams/bridge.js";
 import { BwWebSocketSource } from "../streams/bw-source.js";
 import { bxmlDocument } from "../xml/build-xml.js";
@@ -13,6 +18,9 @@ import {
   gatherParams,
   statusParams,
   recordingStatusParams,
+  dialActionParams,
+  recordActionParams,
+  bwCauseToDialCallStatus,
   postToCustomer,
 } from "../twilio/egress.js";
 import { EgressBlockedError, assertPublicUrl } from "../twilio/egress-guard.js";
@@ -53,6 +61,10 @@ export interface ServerConfig {
   streamBotConnectTimeoutMs?: number;
   /** Passed to TwilioStreamBridge.playoutLatencyPadMs for every stream. Default 0. */
   streamPlayoutLatencyPadMs?: number;
+  /** How long a transferComplete waits for the dialed leg's transferDisconnect
+   *  event before answering the Dial action without DialCallSid/DialCallDuration.
+   *  Bandwidth documents no ordering between the two. Default 400. */
+  transferLegWaitMs?: number;
 }
 
 export interface ServerDeps {
@@ -67,9 +79,35 @@ interface BwEvent {
   to?: string;
   direction?: string;
   digits?: string;
+  terminatingDigit?: string;
   text?: string; // BW gather event speech transcription
   startTime?: string; // BW call answer/start time (for status-callback duration)
+  answerTime?: string;
   endTime?: string; // BW call end time
+  cause?: string; // transferComplete / transferDisconnect / disconnect
+  parentCallId?: string; // transferDisconnect: the call that ran the <Transfer>
+  transferTo?: string;
+  recordingId?: string; // recordComplete
+  duration?: string; // recordComplete, ISO-8601
+  channels?: number;
+}
+
+/** Bandwidth's speech gather reports a timeout as this text rather than "". */
+const SPEECH_TIMEOUT_TEXT = /^speech timeout elapsed/i;
+
+/** True when a gather event carries no usable input, i.e. Twilio's "no digits or speech" case. */
+function gatherIsEmpty(event: BwEvent): boolean {
+  const hasDigits = typeof event.digits === "string" && event.digits.length > 0;
+  const hasSpeech =
+    typeof event.text === "string" && event.text.length > 0 && !SPEECH_TIMEOUT_TEXT.test(event.text);
+  return !hasDigits && !hasSpeech;
+}
+
+/** Whole seconds between two ISO timestamps, or undefined if either is missing/invalid. */
+function secondsBetween(start?: string, end?: string): number | undefined {
+  if (!start || !end) return undefined;
+  const ms = Date.parse(end) - Date.parse(start);
+  return Number.isFinite(ms) ? Math.max(0, Math.round(ms / 1000)) : undefined;
 }
 
 interface BwRecordingEvent {
@@ -132,12 +170,19 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     return u.toString().replace(/\/$/, "");
   })();
 
-  const rewriter = (base: string) => (url: string, kind: UrlKind) => {
+  const rewriter = (base: string) => (url: string, kind: UrlKind, ctx?: RewriteContext) => {
     const absolute = new URL(url, base).toString();
     // Recording-available events are async, fire-and-forget (no BXML continuation),
     // so they route to a dedicated egress endpoint rather than /bw/continue.
     if (kind === "recordingStatus") {
       return `${config.publicBaseUrl}/bw/recording-status?cb=${encodeURIComponent(absolute)}`;
+    }
+    // A Gather's action carries its document position so /bw/continue can resume
+    // the document after it when Bandwidth reports no input (Twilio semantics),
+    // plus the flag that says the customer wants the action even then.
+    if (kind === "action" && ctx?.gatherIndex !== undefined) {
+      const onEmpty = ctx.actionOnEmptyResult ? "&onEmpty=1" : "";
+      return `${config.publicBaseUrl}/bw/continue?next=${encodeURIComponent(absolute)}&gather=${ctx.gatherIndex}${onEmpty}`;
     }
     // A Twilio <Stream url> is the customer's bot. Bandwidth speaks its own
     // StartStream protocol, so the stream must come to us first; /bw/stream
@@ -265,10 +310,35 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     ]);
   }
 
+  /** Translate a TwiML document already in hand (no customer round-trip). */
+  function replyWithTranslation(
+    twiml: string,
+    documentUrl: string,
+    reply: FastifyReply,
+    extra: Pick<TranslateOptions, "resumeAfterGather"> = {},
+  ) {
+    const result = translateTwiml(twiml, {
+      rewriteUrl: rewriter(documentUrl),
+      callbackAuth: { username: config.webhookUser, password: config.webhookPassword },
+      transferLegUrl: `${config.publicBaseUrl}/bw/transfer-leg`,
+      ...extra,
+    });
+    if (result.hasErrors) {
+      const verbs = [
+        ...new Set(result.findings.filter((f) => f.severity === "error").map((f) => f.verb)),
+      ];
+      app.log.error({ findings: result.findings }, "unsupported TwiML");
+      return reply.type("application/xml").send(errorBxml(verbs));
+    }
+    return reply.type("application/xml").send(result.bxml);
+  }
+
   async function fetchAndTranslate(
     customerUrl: string,
     params: Record<string, string>,
     reply: FastifyReply,
+    /** When given, the fetched TwiML is remembered on the record for Gather resume. */
+    record?: CallRecord,
   ) {
     // Split the per-turn latency into the customer webhook round-trip (network,
     // not ours) and the TwiML→BXML translation tax (CPU, ours). With TRANSLATOR_LOG=1
@@ -301,11 +371,13 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
         app.log.error({ err }, "twiml capture failed");
       }
     }
+    if (record) {
+      record.lastTwiml = twiml;
+      record.lastTwimlUrl = customerUrl;
+      store.put(record.bwCallId, record);
+    }
     const translateStart = performance.now();
-    const result = translateTwiml(twiml, {
-      rewriteUrl: rewriter(customerUrl),
-      callbackAuth: { username: config.webhookUser, password: config.webhookPassword },
-    });
+    const out = replyWithTranslation(twiml, customerUrl, reply);
     app.log.info(
       {
         customerUrl,
@@ -314,14 +386,7 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
       },
       "fetchAndTranslate timing",
     );
-    if (result.hasErrors) {
-      const verbs = [
-        ...new Set(result.findings.filter((f) => f.severity === "error").map((f) => f.verb)),
-      ];
-      app.log.error({ findings: result.findings }, "unsupported TwiML");
-      return reply.type("application/xml").send(errorBxml(verbs));
-    }
-    return reply.type("application/xml").send(result.bxml);
+    return out;
   }
 
   app.post("/bw/initiate", async (req, reply) => {
@@ -339,13 +404,27 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
       voiceUrl,
     };
     store.put(event.callId, record);
-    return fetchAndTranslate(voiceUrl, initiateParams(record, config.accountSid), reply);
+    return fetchAndTranslate(voiceUrl, initiateParams(record, config.accountSid), reply, record);
   });
 
+  /** Wait briefly for the dialed leg's transferDisconnect to land before the action fires. */
+  async function awaitTransferLeg(parentCallId: string) {
+    const deadline = Date.now() + (config.transferLegWaitMs ?? 400);
+    for (;;) {
+      const leg = store.takeTransferLeg(parentCallId);
+      if (leg || Date.now() >= deadline) return leg;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+
+  // Synchronous BXML continuations: Bandwidth posts the verb's completion event
+  // here (via a rewritten action URL) and executes whatever BXML we answer with.
+  // Each event type is reshaped into the params Twilio would send to that verb's
+  // action, so the customer's handler branches the way it did on Twilio.
   app.post("/bw/continue", async (req, reply) => {
     const event = req.body as BwEvent;
     if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
-    const query = req.query as { next?: string };
+    const query = req.query as { next?: string; gather?: string; onEmpty?: string };
     if (!query.next) return reply.code(400).send(serverErrors.missingParam("next"));
     const record =
       store.get(event.callId) ??
@@ -357,11 +436,81 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
         direction: "inbound",
         voiceUrl: config.voiceUrl,
       } satisfies CallRecord);
-    const params =
-      event.eventType === "gather" && (event.digits !== undefined || event.text !== undefined)
-        ? gatherParams(record, config.accountSid, { digits: event.digits, speech: event.text })
-        : { ...initiateParams(record, config.accountSid), CallStatus: "in-progress" };
-    return fetchAndTranslate(query.next, params, reply);
+
+    let params: Record<string, string>;
+    switch (event.eventType) {
+      case "gather": {
+        if (gatherIsEmpty(event) && query.onEmpty !== "1") {
+          // Twilio does not request the action on no input; it continues with the
+          // verbs after the <Gather>. Bandwidth has already discarded them, so
+          // re-translate the document from just past this Gather.
+          const gatherIndex = Number(query.gather);
+          if (record.lastTwiml && record.lastTwimlUrl && Number.isInteger(gatherIndex) && gatherIndex > 0) {
+            return replyWithTranslation(record.lastTwiml, record.lastTwimlUrl, reply, {
+              resumeAfterGather: gatherIndex,
+            });
+          }
+          // No document to resume (fresh instance, or an old-style URL): the only
+          // way to keep the call alive is to ask the action anyway.
+          app.log.warn({ callId: event.callId }, "empty gather with no document to resume; requesting action");
+        }
+        params = gatherParams(record, config.accountSid, {
+          digits: event.digits ?? "",
+          speech: event.text !== undefined && !SPEECH_TIMEOUT_TEXT.test(event.text) ? event.text : undefined,
+        });
+        break;
+      }
+      case "transferComplete": {
+        const leg = await awaitTransferLeg(event.callId);
+        // The leg's own cause is authoritative for how the dialed call ended;
+        // the parent's cause is the fallback when the leg event has not arrived.
+        const cause = leg?.cause ?? event.cause;
+        const bridged = leg ? Boolean(leg.answerTime) : cause === "hangup";
+        params = dialActionParams(record, config.accountSid, {
+          dialCallStatus: bwCauseToDialCallStatus(cause),
+          bridged,
+          dialCallSid: leg ? toCallSid(leg.bwCallId) : undefined,
+          durationSec: leg ? (bridged ? secondsBetween(leg.answerTime, leg.endTime) ?? 0 : 0) : undefined,
+        });
+        break;
+      }
+      case "recordComplete": {
+        if (event.recordingId && isSafeBwId(event.recordingId)) {
+          const recordingSid = toRecordingSid(event.recordingId);
+          store.putRecording(recordingSid, { bwCallId: event.callId, bwRecordingId: event.recordingId });
+          params = recordActionParams(record, config.accountSid, {
+            recordingSid,
+            recordingUrl: `${config.publicBaseUrl}/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingSid}`,
+            durationSec: event.duration ? Number(iso8601DurationToSeconds(event.duration)) : 0,
+          });
+        } else {
+          params = { ...initiateParams(record, config.accountSid), CallStatus: "in-progress" };
+        }
+        break;
+      }
+      default:
+        params = { ...initiateParams(record, config.accountSid), CallStatus: "in-progress" };
+    }
+    return fetchAndTranslate(query.next, params, reply, record);
+  });
+
+  // Async: Bandwidth reports how a dialed (B) leg ended. Held until the parent
+  // call's transferComplete arrives, which turns it into Dial action params.
+  app.post("/bw/transfer-leg", async (req, reply) => {
+    const event = req.body as BwEvent;
+    if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
+    if (!isSafeBwId(event.parentCallId)) return reply.code(400).send(serverErrors.invalidParam("parentCallId"));
+    if (event.eventType === "transferDisconnect") {
+      store.putTransferLeg(event.parentCallId, {
+        bwCallId: event.callId,
+        cause: event.cause ?? "unknown",
+        startTime: event.startTime,
+        answerTime: event.answerTime,
+        endTime: event.endTime,
+        transferTo: event.transferTo,
+      });
+    }
+    return reply.code(204).send();
   });
 
   app.post("/bw/disconnect", async (req, reply) => {
