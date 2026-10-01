@@ -113,7 +113,9 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     `transferDisconnect` event, which the translator receives at
     `/bw/transfer-leg` and joins to the parent's `transferComplete` (waiting up
     to `transferLegWaitMs`, default 400 ms, since Bandwidth documents no
-    ordering between the two). As on Twilio, a caller hangup during the
+    ordering between the two). Each Dial's legs are keyed to that Dial, and for
+    a multi-number Dial the leg that answered is reported, not the cancelled
+    ones. As on Twilio, a caller hangup during the
     transfer ends the session without requesting the action.
   - `Gather` — a Gather that ends with no digits or speech does **not** request
     the action (Twilio semantics): the translator remembers each call's last

@@ -38,8 +38,10 @@ export class CallStore {
   private byBwId = new Map<string, CallRecord>();
   private bySid = new Map<string, CallRecord>();
   private recordingsBySid = new Map<string, RecordingRef>();
-  /** Dialed-leg outcomes waiting for their parent's transferComplete, by parent call id. */
-  private transferLegsByParent = new Map<string, TransferLegOutcome[]>();
+  /** Dialed-leg outcomes waiting for their Dial's transferComplete, by parent
+   *  call id, then by the Dial they belong to. Keying by Dial keeps a late leg
+   *  from one Dial out of the next Dial's action. */
+  private transferLegsByParent = new Map<string, Map<string, TransferLegOutcome[]>>();
   put(bwCallId: string, record: CallRecord): void {
     this.byBwId.set(bwCallId, record);
     this.bySid.set(record.sid, record);
@@ -56,17 +58,23 @@ export class CallStore {
   getRecording(recordingSid: string): RecordingRef | undefined {
     return this.recordingsBySid.get(recordingSid);
   }
-  putTransferLeg(parentBwCallId: string, leg: TransferLegOutcome): void {
-    const legs = this.transferLegsByParent.get(parentBwCallId) ?? [];
-    legs.push(leg);
-    this.transferLegsByParent.set(parentBwCallId, legs);
+  putTransferLeg(parentBwCallId: string, dialKey: string, leg: TransferLegOutcome): void {
+    const byDial = this.transferLegsByParent.get(parentBwCallId) ?? new Map<string, TransferLegOutcome[]>();
+    byDial.set(dialKey, [...(byDial.get(dialKey) ?? []), leg]);
+    this.transferLegsByParent.set(parentBwCallId, byDial);
   }
-  /** Remove and return the oldest pending dialed-leg outcome for a parent call. */
-  takeTransferLeg(parentBwCallId: string): TransferLegOutcome | undefined {
-    const legs = this.transferLegsByParent.get(parentBwCallId);
-    if (!legs || legs.length === 0) return undefined;
-    const leg = legs.shift();
-    if (legs.length === 0) this.transferLegsByParent.delete(parentBwCallId);
-    return leg;
+  /** The dialed-leg outcomes received so far for one Dial, in arrival order. */
+  peekTransferLegs(parentBwCallId: string, dialKey: string): readonly TransferLegOutcome[] {
+    return this.transferLegsByParent.get(parentBwCallId)?.get(dialKey) ?? [];
+  }
+  /** Forget one Dial's legs once its action has been answered. */
+  dropTransferLegs(parentBwCallId: string, dialKey: string): void {
+    const byDial = this.transferLegsByParent.get(parentBwCallId);
+    byDial?.delete(dialKey);
+    if (byDial?.size === 0) this.transferLegsByParent.delete(parentBwCallId);
+  }
+  /** Forget every pending leg of a call, e.g. ones that arrived after their Dial's wait. */
+  clearTransferLegs(parentBwCallId: string): void {
+    this.transferLegsByParent.delete(parentBwCallId);
   }
 }

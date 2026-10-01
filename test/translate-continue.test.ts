@@ -97,18 +97,36 @@ describe("Dial transferDisconnectUrl", () => {
     const r = translateTwiml(dial, {
       rewriteUrl: (u) => `https://tr.test/bw/continue?next=${encodeURIComponent(u)}`,
       callbackAuth: { username: "u", password: "p" },
-      transferLegUrl: "https://tr.test/bw/transfer-leg",
+      transferLegUrl: (i) => `https://tr.test/bw/transfer-leg?dial=${i}`,
     });
     expect(r.bxml).toMatch(
-      /<PhoneNumber transferDisconnectUrl="https:\/\/tr\.test\/bw\/transfer-leg" username="u" password="p">\+15552223333<\/PhoneNumber>/,
+      /<PhoneNumber transferDisconnectUrl="https:\/\/tr\.test\/bw\/transfer-leg\?dial=1" username="u" password="p">\+15552223333<\/PhoneNumber>/,
     );
-    expect(r.bxml).toMatch(/<SipUri transferDisconnectUrl="https:\/\/tr\.test\/bw\/transfer-leg" username="u" password="p">/);
+    expect(r.bxml).toMatch(/<SipUri transferDisconnectUrl="https:\/\/tr\.test\/bw\/transfer-leg\?dial=1" username="u" password="p">/);
     expect(r.bxml).toMatch(/<Transfer transferCompleteUrl="[^"]+" username="u" password="p">/);
+  });
+
+  it("numbers each Dial with an action and tells the rewriter how many targets it rings", () => {
+    const { calls, rewriteUrl } = recordingRewriter();
+    const r = translateTwiml(
+      `<Response>
+        <Dial action="/a"><Number>+15550000001</Number><Number>+15550000002</Number></Dial>
+        <Dial>+15550000003</Dial>
+        <Dial action="/b"><Number>+15550000004</Number></Dial>
+      </Response>`,
+      { rewriteUrl, transferLegUrl: (i) => `https://tr.test/leg?dial=${i}` },
+    );
+    expect(calls.filter((c) => c.kind === "transfer").map((c) => c.ctx)).toEqual([
+      { dialIndex: 1, dialTargets: 2 },
+      { dialIndex: 2, dialTargets: 1 },
+    ]);
+    expect(r.bxml.match(/leg\?dial=1/g)).toHaveLength(2);
+    expect(r.bxml.match(/leg\?dial=2/g)).toHaveLength(1);
   });
 
   it("does not stamp it when the Dial has no action (nothing to report to)", () => {
     const r = translateTwiml(`<Response><Dial>+15552223333</Dial></Response>`, {
-      transferLegUrl: "https://tr.test/bw/transfer-leg",
+      transferLegUrl: () => "https://tr.test/bw/transfer-leg",
     });
     expect(r.bxml).not.toContain("transferDisconnectUrl");
   });

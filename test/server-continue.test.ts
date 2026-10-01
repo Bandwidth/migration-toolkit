@@ -87,6 +87,18 @@ async function initiate(app: any, callId: string) {
 
 const continueUrl = (next: string, extra = "") => `/bw/continue?next=${encodeURIComponent(next)}${extra}`;
 
+const unescape = (s: string) => s.replace(/&amp;/g, "&");
+/** Path+query of an absolute translator URL, for app.inject. */
+const pathOf = (url: string) => new URL(url).pathname + new URL(url).search;
+
+/** Each Transfer in a BXML body: its transferCompleteUrl and its targets' transferDisconnectUrls. */
+function dialUrls(bxml: string) {
+  return [...bxml.matchAll(/<Transfer transferCompleteUrl="([^"]+)"[^>]*>(.*?)<\/Transfer>/g)].map((m) => ({
+    complete: unescape(m[1]),
+    legs: [...m[2].matchAll(/transferDisconnectUrl="([^"]+)"/g)].map((l) => unescape(l[1])),
+  }));
+}
+
 // ─── Dial action ─────────────────────────────────────────────────────────────
 
 describe("/bw/continue transferComplete -> Dial action", () => {
@@ -100,8 +112,11 @@ describe("/bw/continue transferComplete -> Dial action", () => {
     const { app } = makeApp(docs);
     const res = await initiate(app, "c-d1");
     expect(res.body).toMatch(
-      /<PhoneNumber transferDisconnectUrl="https:\/\/translator\.test\/bw\/transfer-leg" username="u" password="p">\+15552223333<\/PhoneNumber>/,
+      /<PhoneNumber transferDisconnectUrl="https:\/\/translator\.test\/bw\/transfer-leg\?dial=[0-9a-f]{8}\.1" username="u" password="p">\+15552223333<\/PhoneNumber>/,
     );
+    // The action names the same Dial and how many legs it rings.
+    const { complete, legs } = dialUrls(res.body)[0];
+    expect(complete).toContain(`&dial=${new URL(legs[0]).searchParams.get("dial")}&legs=1`);
   });
 
   it("joins the dialed leg's disconnect to the action: completed, bridged, DialCallSid, DialCallDuration", async () => {
@@ -242,7 +257,128 @@ describe("/bw/continue transferComplete -> Dial action", () => {
   });
 });
 
+describe("Dial action picks the right leg (multi-target, repeated Dials)", () => {
+  const AFTER = "https://customer.test/after";
+  const NEXT = "https://customer.test/next";
+
+  const legEvent = (url: string, parent: string, leg: string, extra: Record<string, unknown>) => ({
+    method: "POST" as const,
+    url: pathOf(url),
+    headers: { authorization: webhookAuth },
+    payload: bwEvent(leg, { eventType: "transferDisconnect", parentCallId: parent, ...extra }),
+  });
+  const completion = (url: string, callId: string, cause: string) => ({
+    method: "POST" as const,
+    url: pathOf(url),
+    headers: { authorization: webhookAuth },
+    payload: bwEvent(callId, { eventType: "transferComplete", cause }),
+  });
+
+  it("reports the answered leg even when the cancelled leg reported first", async () => {
+    const { app, customerPost } = makeApp({
+      "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number><Number>+15550000002</Number></Dial></Response>`,
+      [AFTER]: `<Response><Say>After</Say></Response>`,
+    });
+    const [dial] = dialUrls((await initiate(app, "c-m1")).body);
+    expect(dial.legs).toHaveLength(2);
+    expect(dial.complete).toContain("&legs=2");
+
+    // B answers, so A is cancelled at once and its event lands first.
+    await app.inject(legEvent(dial.legs[0], "c-m1", "c-m1-a", { cause: "cancel", startTime: "2026-09-29T10:00:00Z", endTime: "2026-09-29T10:00:05Z" }));
+    await app.inject(
+      legEvent(dial.legs[1], "c-m1", "c-m1-b", { cause: "hangup", answerTime: "2026-09-29T10:00:05Z", endTime: "2026-09-29T10:00:45Z" }),
+    );
+    await app.inject(completion(dial.complete, "c-m1", "hangup"));
+
+    expect(customerPost(1)!.params).toMatchObject({
+      DialCallStatus: "completed",
+      DialBridged: "true",
+      DialCallSid: toCallSid("c-m1-b"),
+      DialCallDuration: "40",
+    });
+  });
+
+  it("does not report a cancelled loser when the answered leg has not reported yet", async () => {
+    const { app, customerPost } = makeApp({
+      "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number><Number>+15550000002</Number></Dial></Response>`,
+      [AFTER]: `<Response><Say>After</Say></Response>`,
+    });
+    const [dial] = dialUrls((await initiate(app, "c-m2")).body);
+    await app.inject(legEvent(dial.legs[0], "c-m2", "c-m2-a", { cause: "cancel" }));
+    await app.inject(completion(dial.complete, "c-m2", "hangup"));
+    const { params } = customerPost(1)!;
+    expect(params).toMatchObject({ DialCallStatus: "completed", DialBridged: "true" });
+    expect(params.DialCallSid).toBeUndefined();
+  });
+
+  it("answers as soon as every leg of an unanswered multi-target Dial has reported", async () => {
+    const { app, customerPost } = makeApp(
+      {
+        "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number><Number>+15550000002</Number></Dial></Response>`,
+        [AFTER]: `<Response><Say>After</Say></Response>`,
+      },
+      config({ transferLegWaitMs: 5000 }),
+    );
+    const [dial] = dialUrls((await initiate(app, "c-m3")).body);
+    await app.inject(legEvent(dial.legs[0], "c-m3", "c-m3-a", { cause: "timeout" }));
+    await app.inject(legEvent(dial.legs[1], "c-m3", "c-m3-b", { cause: "timeout" }));
+    const t0 = Date.now();
+    await app.inject(completion(dial.complete, "c-m3", "timeout"));
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(customerPost(1)!.params).toMatchObject({ DialCallStatus: "no-answer", DialBridged: "false" });
+  });
+
+  it("a leg that reports after its Dial's wait is not applied to the next Dial", async () => {
+    const { app, customerPost } = makeApp({
+      "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number></Dial></Response>`,
+      [AFTER]: `<Response><Dial action="/next"><Number>+15550000002</Number></Dial></Response>`,
+      [NEXT]: `<Response><Say>Done</Say></Response>`,
+    });
+    const [first] = dialUrls((await initiate(app, "c-m4")).body);
+
+    // Dial #1 completes with no leg event inside the wait window.
+    const r1 = await app.inject(completion(first.complete, "c-m4", "hangup"));
+    expect(customerPost(1)!.params.DialCallSid).toBeUndefined();
+    // Its leg reports late.
+    await app.inject(
+      legEvent(first.legs[0], "c-m4", "c-m4-first", { cause: "hangup", answerTime: "2026-09-29T10:00:05Z", endTime: "2026-09-29T10:00:45Z" }),
+    );
+
+    // Dial #2 (from the action's document) times out with no leg event of its own.
+    const [second] = dialUrls(r1.body);
+    expect(new URL(second.legs[0]).searchParams.get("dial")).not.toBe(new URL(first.legs[0]).searchParams.get("dial"));
+    await app.inject(completion(second.complete, "c-m4", "timeout"));
+    const { params } = customerPost(2)!;
+    expect(params).toMatchObject({ DialCallStatus: "no-answer", DialBridged: "false" });
+    expect(params.DialCallSid).toBeUndefined();
+  });
+
+  it("drops unread legs when the call disconnects", async () => {
+    const { app, customerPost } = makeApp({
+      "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number></Dial></Response>`,
+      [AFTER]: `<Response><Say>After</Say></Response>`,
+    });
+    await initiate(app, "c-m5");
+    // An old-style (unkeyed) leg, then the call ends before any Dial reads it.
+    await app.inject(legEvent("https://translator.test/bw/transfer-leg", "c-m5", "c-m5-x", { cause: "hangup", answerTime: "2026-09-29T10:00:05Z" }));
+    await app.inject({ method: "POST", url: "/bw/disconnect", headers: { authorization: webhookAuth }, payload: bwEvent("c-m5", { eventType: "disconnect" }) });
+    await app.inject(completion(`https://translator.test${continueUrl(AFTER)}`, "c-m5", "busy"));
+    expect(customerPost(1)!.params.DialCallSid).toBeUndefined();
+  });
+});
+
 describe("/bw/transfer-leg", () => {
+  it("rejects a malformed dial key", async () => {
+    const { app } = makeApp({});
+    const res = await app.inject({
+      method: "POST",
+      url: "/bw/transfer-leg?dial=../x",
+      headers: { authorization: webhookAuth },
+      payload: { eventType: "transferDisconnect", callId: "c-1", parentCallId: "c-0", cause: "hangup" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("requires webhook auth and safe ids", async () => {
     const { app } = makeApp({});
     expect((await app.inject({ method: "POST", url: "/bw/transfer-leg", payload: { callId: "c-1", parentCallId: "c-0" } })).statusCode).toBe(401);

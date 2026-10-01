@@ -170,7 +170,9 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     return u.toString().replace(/\/$/, "");
   })();
 
-  const rewriter = (base: string) => (url: string, kind: UrlKind, ctx?: RewriteContext) => {
+  /** `doc` identifies one translation, so a Dial's key is unique for the whole
+   *  call, not just within its document (two documents can each have "Dial 1"). */
+  const rewriter = (base: string, doc: string) => (url: string, kind: UrlKind, ctx?: RewriteContext) => {
     const absolute = new URL(url, base).toString();
     // Recording-available events are async, fire-and-forget (no BXML continuation),
     // so they route to a dedicated egress endpoint rather than /bw/continue.
@@ -183,6 +185,11 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     if (kind === "action" && ctx?.gatherIndex !== undefined) {
       const onEmpty = ctx.actionOnEmptyResult ? "&onEmpty=1" : "";
       return `${config.publicBaseUrl}/bw/continue?next=${encodeURIComponent(absolute)}&gather=${ctx.gatherIndex}${onEmpty}`;
+    }
+    // A Dial's action names the Dial (matching its legs' transferDisconnectUrl)
+    // and how many legs it rings, so /bw/continue joins only that Dial's legs.
+    if (kind === "transfer" && ctx?.dialIndex !== undefined) {
+      return `${config.publicBaseUrl}/bw/continue?next=${encodeURIComponent(absolute)}&dial=${doc}.${ctx.dialIndex}&legs=${ctx.dialTargets ?? 1}`;
     }
     // A Twilio <Stream url> is the customer's bot. Bandwidth speaks its own
     // StartStream protocol, so the stream must come to us first; /bw/stream
@@ -317,10 +324,11 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     reply: FastifyReply,
     extra: Pick<TranslateOptions, "resumeAfterGather"> = {},
   ) {
+    const doc = randomUUID().slice(0, 8);
     const result = translateTwiml(twiml, {
-      rewriteUrl: rewriter(documentUrl),
+      rewriteUrl: rewriter(documentUrl, doc),
       callbackAuth: { username: config.webhookUser, password: config.webhookPassword },
-      transferLegUrl: `${config.publicBaseUrl}/bw/transfer-leg`,
+      transferLegUrl: (dialIndex) => `${config.publicBaseUrl}/bw/transfer-leg?dial=${doc}.${dialIndex}`,
       ...extra,
     });
     if (result.hasErrors) {
@@ -407,15 +415,31 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     return fetchAndTranslate(voiceUrl, initiateParams(record, config.accountSid), reply, record);
   });
 
-  /** Wait briefly for the dialed leg's transferDisconnect to land before the action fires. */
-  async function awaitTransferLeg(parentCallId: string) {
+  /**
+   * Wait briefly for one Dial's legs to report, then pick the leg its action
+   * describes. A Dial with several targets rings them at once; when one answers
+   * the rest are cancelled and usually report first, so the answered leg wins
+   * regardless of arrival order. Waits until a leg that answered has arrived,
+   * every expected leg has, or transferLegWaitMs passes.
+   */
+  async function awaitTransferLeg(parentCallId: string, dialKey: string, expectedLegs: number, parentCause?: string) {
     const deadline = Date.now() + (config.transferLegWaitMs ?? 400);
-    for (;;) {
-      const leg = store.takeTransferLeg(parentCallId);
-      if (leg || Date.now() >= deadline) return leg;
+    let legs = store.peekTransferLegs(parentCallId, dialKey);
+    while (!legs.some((l) => l.answerTime) && legs.length < expectedLegs && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 25));
+      legs = store.peekTransferLegs(parentCallId, dialKey);
     }
+    store.dropTransferLegs(parentCallId, dialKey);
+    const answered = legs.find((l) => l.answerTime);
+    if (answered) return answered;
+    // The parent says the transfer bridged but the answered leg has not reported:
+    // the legs in hand are the cancelled losers, so report none rather than one of them.
+    if (parentCause === "hangup") return undefined;
+    return legs.at(-1);
   }
+
+  /** Dial key as minted by the rewriter: `<8 hex>.<index>`. */
+  const isDialKey = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}\.\d{1,4}$/.test(v);
 
   // Synchronous BXML continuations: Bandwidth posts the verb's completion event
   // here (via a rewritten action URL) and executes whatever BXML we answer with.
@@ -424,7 +448,7 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
   app.post("/bw/continue", async (req, reply) => {
     const event = req.body as BwEvent;
     if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
-    const query = req.query as { next?: string; gather?: string; onEmpty?: string };
+    const query = req.query as { next?: string; gather?: string; onEmpty?: string; dial?: string; legs?: string };
     if (!query.next) return reply.code(400).send(serverErrors.missingParam("next"));
     const record =
       store.get(event.callId) ??
@@ -461,7 +485,15 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
         break;
       }
       case "transferComplete": {
-        const leg = await awaitTransferLeg(event.callId);
+        // A URL without a valid dial key (minted before this change) shares the
+        // "" bucket with legs that likewise carry none.
+        const legsParam = Number(query.legs);
+        const leg = await awaitTransferLeg(
+          event.callId,
+          isDialKey(query.dial) ? query.dial : "",
+          Number.isInteger(legsParam) && legsParam > 0 ? legsParam : 1,
+          event.cause,
+        );
         // The leg's own cause is authoritative for how the dialed call ended;
         // the parent's cause is the fallback when the leg event has not arrived.
         const cause = leg?.cause ?? event.cause;
@@ -500,8 +532,10 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     const event = req.body as BwEvent;
     if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
     if (!isSafeBwId(event.parentCallId)) return reply.code(400).send(serverErrors.invalidParam("parentCallId"));
+    const { dial } = req.query as { dial?: string };
+    if (dial !== undefined && !isDialKey(dial)) return reply.code(400).send(serverErrors.invalidParam("dial"));
     if (event.eventType === "transferDisconnect") {
-      store.putTransferLeg(event.parentCallId, {
+      store.putTransferLeg(event.parentCallId, dial ?? "", {
         bwCallId: event.callId,
         cause: event.cause ?? "unknown",
         startTime: event.startTime,
@@ -516,6 +550,8 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
   app.post("/bw/disconnect", async (req, reply) => {
     const event = req.body as BwEvent;
     if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
+    // Legs that reported after their Dial's wait will never be read.
+    store.clearTransferLegs(event.callId);
     const record = store.get(event.callId);
     if (record) {
       // Bandwidth bills (and Twilio reports) from answer to end; fall back to 0

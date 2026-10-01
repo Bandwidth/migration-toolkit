@@ -18,6 +18,10 @@ export interface RewriteContext {
   gatherIndex?: number;
   /** Twilio actionOnEmptyResult="true": request the action even with no input. */
   actionOnEmptyResult?: boolean;
+  /** 1-based position of this <Dial> among the Dials with an action in the document. */
+  dialIndex?: number;
+  /** How many targets (Number/Sip) this <Dial> rings, i.e. how many legs to expect. */
+  dialTargets?: number;
 }
 
 export type RewriteUrl = (url: string, kind: UrlKind, ctx?: RewriteContext) => string;
@@ -28,10 +32,12 @@ export interface TranslateOptions {
    *  authenticates its continuation callbacks (e.g. /bw/continue). */
   callbackAuth?: { username: string; password: string };
   /** Absolute URL that receives Bandwidth's transferDisconnect event for every
-   *  dialed leg (the translator's /bw/transfer-leg). Set by the server so a Dial
-   *  action can report DialCallSid/DialCallDuration/DialBridged, which Bandwidth's
-   *  transferComplete event does not carry. Standalone BXML generation leaves it unset. */
-  transferLegUrl?: string;
+   *  leg of the Nth Dial (the translator's /bw/transfer-leg). Set by the server so
+   *  a Dial action can report DialCallSid/DialCallDuration/DialBridged, which
+   *  Bandwidth's transferComplete event does not carry. The index matches the
+   *  dialIndex the rewriter sees for that Dial's action, so the server can tie
+   *  each leg to its own Dial. Standalone BXML generation leaves it unset. */
+  transferLegUrl?: (dialIndex: number) => string;
   /** Emit only the verbs after the Nth <Gather> (1-based, document order). Used
    *  to resume a document when a Gather ends with no input: Twilio continues
    *  with the following verbs, Bandwidth expects fresh BXML from the gatherUrl. */
@@ -229,6 +235,7 @@ export function translateTwiml(twiml: string, opts: TranslateOptions = {}): Tran
   bxmlByteBudget = MAX_TOTAL_BXML_BYTES;
   connectStreamSeq = 0;
   gatherSeq = 0;
+  dialSeq = 0;
   currentTransferLegUrl = opts.transferLegUrl;
   const root = parseTwiml(twiml);
   const findings: Finding[] = [];
@@ -452,8 +459,10 @@ function translateGather(
 // Per-document counter of <Gather> verbs in document order; reset per
 // translateTwiml call (same module-state caveat as bxmlByteBudget).
 let gatherSeq = 0;
+// Per-document counter of <Dial> verbs with an action; same caveat.
+let dialSeq = 0;
 // The server's transferDisconnect endpoint for the current translation, if any.
-let currentTransferLegUrl: string | undefined;
+let currentTransferLegUrl: ((dialIndex: number) => string) | undefined;
 
 function translateRecord(
   node: TwimlNode,
@@ -567,13 +576,19 @@ function translateDial(
     callTimeout: node.attrs.timeout,
   };
   if (node.attrs.action) {
-    attrs.transferCompleteUrl = rewrite(node.attrs.action, "transfer");
+    const dialIndex = ++dialSeq;
+    attrs.transferCompleteUrl = rewrite(node.attrs.action, "transfer", {
+      dialIndex,
+      dialTargets: targets.length,
+    });
     // Bandwidth's transferComplete names only the original call. The dialed
     // leg's id, answer time, and end time arrive on its own transferDisconnect
     // event, which the server joins to the action callback for DialCallSid,
     // DialCallDuration, and DialBridged.
-    if (currentTransferLegUrl)
-      for (const t of targets) t.attrs = { ...t.attrs, transferDisconnectUrl: currentTransferLegUrl };
+    if (currentTransferLegUrl) {
+      const legUrl = currentTransferLegUrl(dialIndex);
+      for (const t of targets) t.attrs = { ...t.attrs, transferDisconnectUrl: legUrl };
+    }
   }
 
   // Handle Twilio Dial record attribute → prepend StartRecording before Transfer.
