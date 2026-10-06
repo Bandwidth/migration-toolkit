@@ -283,8 +283,9 @@ describe("Dial action picks the right leg (multi-target, repeated Dials)", () =>
     expect(dial.legs).toHaveLength(2);
     expect(dial.complete).toContain("&legs=2");
 
-    // B answers, so A is cancelled at once and its event lands first.
-    await app.inject(legEvent(dial.legs[0], "c-m1", "c-m1-a", { cause: "cancel", startTime: "2026-09-29T10:00:00Z", endTime: "2026-09-29T10:00:05Z" }));
+    // B answers, so A is cut off at once and its event lands first. This is the
+    // shape Bandwidth sent on a live call: cause "hangup", no answerTime.
+    await app.inject(legEvent(dial.legs[0], "c-m1", "c-m1-a", { cause: "hangup", startTime: "2026-09-29T10:00:00Z", endTime: "2026-09-29T10:00:05Z" }));
     await app.inject(
       legEvent(dial.legs[1], "c-m1", "c-m1-b", { cause: "hangup", answerTime: "2026-09-29T10:00:05Z", endTime: "2026-09-29T10:00:45Z" }),
     );
@@ -304,11 +305,27 @@ describe("Dial action picks the right leg (multi-target, repeated Dials)", () =>
       [AFTER]: `<Response><Say>After</Say></Response>`,
     });
     const [dial] = dialUrls((await initiate(app, "c-m2")).body);
-    await app.inject(legEvent(dial.legs[0], "c-m2", "c-m2-a", { cause: "cancel" }));
+    await app.inject(legEvent(dial.legs[0], "c-m2", "c-m2-a", { cause: "hangup", endTime: "2026-09-29T10:00:05Z" }));
     await app.inject(completion(dial.complete, "c-m2", "hangup"));
     const { params } = customerPost(1)!;
     expect(params).toMatchObject({ DialCallStatus: "completed", DialBridged: "true" });
     expect(params.DialCallSid).toBeUndefined();
+  });
+
+  it("a leg that ended with cause hangup but was never answered is canceled, not completed", async () => {
+    const { app, customerPost } = makeApp({
+      "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number></Dial></Response>`,
+      [AFTER]: `<Response><Say>After</Say></Response>`,
+    });
+    const [dial] = dialUrls((await initiate(app, "c-m6")).body);
+    await app.inject(legEvent(dial.legs[0], "c-m6", "c-m6-a", { cause: "hangup", startTime: "2026-09-29T10:00:00Z", endTime: "2026-09-29T10:00:05Z" }));
+    await app.inject(completion(dial.complete, "c-m6", "timeout"));
+    expect(customerPost(1)!.params).toMatchObject({
+      DialCallStatus: "canceled",
+      DialBridged: "false",
+      DialCallDuration: "0",
+      DialCallSid: toCallSid("c-m6-a"),
+    });
   });
 
   it("answers as soon as every leg of an unanswered multi-target Dial has reported", async () => {

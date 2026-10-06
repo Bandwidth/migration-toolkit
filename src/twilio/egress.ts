@@ -66,11 +66,16 @@ export function gatherParams(
  * transferDisconnect cause is preferred; the parent's transferComplete cause
  * is the fallback. Bandwidth documents the list as non-exhaustive, so anything
  * unrecognized is "failed", which is what Twilio reports for an unroutable call.
+ *
+ * `answered` is whether the dialed leg was answered, when the leg is known.
+ * Bandwidth reports a leg ended before it connected (e.g. the losing number of
+ * a multi-number Dial, cut off when another answered) as cause "hangup" with
+ * no answerTime, so "hangup" only means "completed" for an answered leg.
  */
-export function bwCauseToDialCallStatus(cause: string | undefined): string {
+export function bwCauseToDialCallStatus(cause: string | undefined, answered?: boolean): string {
   switch (cause) {
     case "hangup":
-      return "completed";
+      return answered === false ? "canceled" : "completed";
     case "busy":
     case "rejected":
       return "busy";

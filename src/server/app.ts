@@ -499,7 +499,7 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
         const cause = leg?.cause ?? event.cause;
         const bridged = leg ? Boolean(leg.answerTime) : cause === "hangup";
         params = dialActionParams(record, config.accountSid, {
-          dialCallStatus: bwCauseToDialCallStatus(cause),
+          dialCallStatus: bwCauseToDialCallStatus(cause, leg ? bridged : undefined),
           bridged,
           dialCallSid: leg ? toCallSid(leg.bwCallId) : undefined,
           durationSec: leg ? (bridged ? secondsBetween(leg.answerTime, leg.endTime) ?? 0 : 0) : undefined,
