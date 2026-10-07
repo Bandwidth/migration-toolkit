@@ -312,6 +312,48 @@ describe("Dial action picks the right leg (multi-target, repeated Dials)", () =>
     expect(params.DialCallSid).toBeUndefined();
   });
 
+  it("once every leg has reported, the legs win over a parent cause of hangup", async () => {
+    const { app, customerPost } = makeApp({
+      "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number></Dial></Response>`,
+      [AFTER]: `<Response><Say>After</Say></Response>`,
+    });
+    const [dial] = dialUrls((await initiate(app, "c-m7")).body);
+    // The only leg reports, unanswered; the parent's cause alone would say "bridged".
+    await app.inject(legEvent(dial.legs[0], "c-m7", "c-m7-a", { cause: "hangup", endTime: "2026-09-29T10:00:05Z" }));
+    await app.inject(completion(dial.complete, "c-m7", "hangup"));
+    expect(customerPost(1)!.params).toMatchObject({
+      DialCallStatus: "canceled",
+      DialBridged: "false",
+      DialCallSid: toCallSid("c-m7-a"),
+    });
+  });
+
+  it("a redelivered leg event counts once, so the wait still catches the answered leg", async () => {
+    const { app, customerPost } = makeApp(
+      {
+        "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number><Number>+15550000002</Number></Dial></Response>`,
+        [AFTER]: `<Response><Say>After</Say></Response>`,
+      },
+      config({ transferLegWaitMs: 1000 }),
+    );
+    const [dial] = dialUrls((await initiate(app, "c-m8")).body);
+    const loser = legEvent(dial.legs[0], "c-m8", "c-m8-a", { cause: "hangup", endTime: "2026-09-29T10:00:05Z" });
+    await app.inject(loser);
+    await app.inject(loser); // Bandwidth retry of the same event
+    const completing = app.inject(completion(dial.complete, "c-m8", "hangup"));
+    await new Promise((r) => setTimeout(r, 100));
+    await app.inject(
+      legEvent(dial.legs[1], "c-m8", "c-m8-b", { cause: "hangup", answerTime: "2026-09-29T10:00:05Z", endTime: "2026-09-29T10:00:25Z" }),
+    );
+    await completing;
+    expect(customerPost(1)!.params).toMatchObject({
+      DialCallStatus: "completed",
+      DialBridged: "true",
+      DialCallSid: toCallSid("c-m8-b"),
+      DialCallDuration: "20",
+    });
+  });
+
   it("a leg that ended with cause hangup but was never answered is canceled, not completed", async () => {
     const { app, customerPost } = makeApp({
       "https://customer.test/voice": `<Response><Dial action="/after"><Number>+15550000001</Number></Dial></Response>`,
@@ -573,6 +615,22 @@ describe("/bw/continue gather with no input", () => {
     });
     expect(customerPost(2)!.params).toMatchObject({ SpeechResult: "sales please" });
     expect(customerPost(2)!.params.Digits).toBe("");
+  });
+
+  it("releases the remembered document when the call disconnects", async () => {
+    const { app, customerPost } = makeApp(docs);
+    await initiate(app, "c-g7");
+    await app.inject({ method: "POST", url: "/bw/disconnect", headers: { authorization: webhookAuth }, payload: bwEvent("c-g7", { eventType: "disconnect" }) });
+    // With the document gone there is nothing to resume, so an (unlikely) late
+    // empty gather falls back to requesting the action.
+    const res = await app.inject({
+      method: "POST",
+      url: continueUrl(MENU, "&gather=1"),
+      headers: { authorization: webhookAuth },
+      payload: bwEvent("c-g7", { eventType: "gather", digits: "" }),
+    });
+    expect(res.body).toContain("You pressed one");
+    expect(customerPost(1)!.params.Digits).toBe("");
   });
 
   it("falls back to requesting the action when there is no document to resume (fresh instance)", async () => {

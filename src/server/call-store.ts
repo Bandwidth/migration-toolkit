@@ -28,10 +28,8 @@ export interface TransferLegOutcome {
   /** Bandwidth call id of the dialed leg. */
   bwCallId: string;
   cause: string;
-  startTime?: string;
   answerTime?: string;
   endTime?: string;
-  transferTo?: string;
 }
 
 export class CallStore {
@@ -58,9 +56,12 @@ export class CallStore {
   getRecording(recordingSid: string): RecordingRef | undefined {
     return this.recordingsBySid.get(recordingSid);
   }
+  /** A redelivered event for the same leg replaces the earlier one, so it can't
+   *  count twice toward the Dial's expected legs. */
   putTransferLeg(parentBwCallId: string, dialKey: string, leg: TransferLegOutcome): void {
     const byDial = this.transferLegsByParent.get(parentBwCallId) ?? new Map<string, TransferLegOutcome[]>();
-    byDial.set(dialKey, [...(byDial.get(dialKey) ?? []), leg]);
+    const others = (byDial.get(dialKey) ?? []).filter((l) => l.bwCallId !== leg.bwCallId);
+    byDial.set(dialKey, [...others, leg]);
     this.transferLegsByParent.set(parentBwCallId, byDial);
   }
   /** The dialed-leg outcomes received so far for one Dial, in arrival order. */

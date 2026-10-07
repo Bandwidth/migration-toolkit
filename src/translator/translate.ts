@@ -341,7 +341,7 @@ function applyLoop(els: XmlEl[], loop: string | undefined, verb: string, finding
 function translateVerb(
   node: TwimlNode,
   findings: Finding[],
-  rewrite: (url: string, kind: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   switch (node.name) {
     case "Say": {

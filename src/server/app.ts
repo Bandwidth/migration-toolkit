@@ -79,17 +79,14 @@ interface BwEvent {
   to?: string;
   direction?: string;
   digits?: string;
-  terminatingDigit?: string;
   text?: string; // BW gather event speech transcription
   startTime?: string; // BW call answer/start time (for status-callback duration)
   answerTime?: string;
   endTime?: string; // BW call end time
   cause?: string; // transferComplete / transferDisconnect / disconnect
   parentCallId?: string; // transferDisconnect: the call that ran the <Transfer>
-  transferTo?: string;
   recordingId?: string; // recordComplete
   duration?: string; // recordComplete, ISO-8601
-  channels?: number;
 }
 
 /** Bandwidth's speech gather reports a timeout as this text rather than "". */
@@ -108,6 +105,11 @@ function secondsBetween(start?: string, end?: string): number | undefined {
   if (!start || !end) return undefined;
   const ms = Date.parse(end) - Date.parse(start);
   return Number.isFinite(ms) ? Math.max(0, Math.round(ms / 1000)) : undefined;
+}
+
+/** Whole seconds in a Bandwidth ISO-8601 recording duration, 0 if absent. */
+function recordingSeconds(duration?: string): number {
+  return duration ? Number(iso8601DurationToSeconds(duration)) : 0;
 }
 
 interface BwRecordingEvent {
@@ -433,8 +435,9 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     const answered = legs.find((l) => l.answerTime);
     if (answered) return answered;
     // The parent says the transfer bridged but the answered leg has not reported:
-    // the legs in hand are the cancelled losers, so report none rather than one of them.
-    if (parentCause === "hangup") return undefined;
+    // the legs in hand are the cancelled losers, so report none rather than one of
+    // them. Once every leg has reported, though, the legs are the better evidence.
+    if (parentCause === "hangup" && legs.length < expectedLegs) return undefined;
     return legs.at(-1);
   }
 
@@ -513,7 +516,7 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
           params = recordActionParams(record, config.accountSid, {
             recordingSid,
             recordingUrl: `${config.publicBaseUrl}/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingSid}`,
-            durationSec: event.duration ? Number(iso8601DurationToSeconds(event.duration)) : 0,
+            durationSec: recordingSeconds(event.duration),
           });
         } else {
           params = { ...initiateParams(record, config.accountSid), CallStatus: "in-progress" };
@@ -538,10 +541,8 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
       store.putTransferLeg(event.parentCallId, dial ?? "", {
         bwCallId: event.callId,
         cause: event.cause ?? "unknown",
-        startTime: event.startTime,
         answerTime: event.answerTime,
         endTime: event.endTime,
-        transferTo: event.transferTo,
       });
     }
     return reply.code(204).send();
@@ -554,12 +555,13 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     store.clearTransferLegs(event.callId);
     const record = store.get(event.callId);
     if (record) {
+      // The document kept for Gather resume can be up to MAX_TWIML_BYTES; the
+      // call is over, so release it. The record itself stays for the Calls API.
+      delete record.lastTwiml;
+      delete record.lastTwimlUrl;
       // Bandwidth bills (and Twilio reports) from answer to end; fall back to 0
       // if the BW event didn't carry timing.
-      const durationSec =
-        event.startTime && event.endTime
-          ? Math.max(0, Math.round((Date.parse(event.endTime) - Date.parse(event.startTime)) / 1000))
-          : 0;
+      const durationSec = secondsBetween(event.startTime, event.endTime) ?? 0;
       const params = statusParams(record, config.accountSid, durationSec);
       if (record.statusCallback) {
         // Fire the Twilio-shaped status callback to the customer. A failing
@@ -604,7 +606,7 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
       const params = recordingStatusParams(record, config.accountSid, {
         recordingSid,
         recordingUrl: `${config.publicBaseUrl}/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingSid}`,
-        durationSec: event.duration ? Number(iso8601DurationToSeconds(event.duration)) : 0,
+        durationSec: recordingSeconds(event.duration),
         channels: event.channels,
         status: bwRecordingStatus(event.status ?? "complete"),
         startTime: event.startTime,
@@ -724,10 +726,8 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     const bw = await deps.bwClient.getCall(record.bwCallId);
     // Twilio bills from answer to end; fall back to start if the call was never answered.
     const started = bw.answerTime ?? bw.startTime;
-    const duration =
-      started && bw.endTime
-        ? String(Math.round((Date.parse(bw.endTime) - Date.parse(started)) / 1000))
-        : undefined;
+    const seconds = secondsBetween(started, bw.endTime);
+    const duration = seconds === undefined ? undefined : String(seconds);
     return reply.send(
       createdCallResource({
         sid: record.sid,
