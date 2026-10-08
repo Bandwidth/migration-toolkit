@@ -12,11 +12,36 @@ export interface Finding {
   docsUrl?: string;
 }
 
+/** Extra facts about the verb a URL belongs to, for rewriters that need them. */
+export interface RewriteContext {
+  /** 1-based position of this <Gather> among all Gathers in the document. */
+  gatherIndex?: number;
+  /** Twilio actionOnEmptyResult="true": request the action even with no input. */
+  actionOnEmptyResult?: boolean;
+  /** 1-based position of this <Dial> among the Dials with an action in the document. */
+  dialIndex?: number;
+  /** How many targets (Number/Sip) this <Dial> rings, i.e. how many legs to expect. */
+  dialTargets?: number;
+}
+
+export type RewriteUrl = (url: string, kind: UrlKind, ctx?: RewriteContext) => string;
+
 export interface TranslateOptions {
-  rewriteUrl?: (url: string, kind: UrlKind) => string;
+  rewriteUrl?: RewriteUrl;
   /** Basic-auth credentials to stamp onto emitted BXML callback verbs so Bandwidth
    *  authenticates its continuation callbacks (e.g. /bw/continue). */
   callbackAuth?: { username: string; password: string };
+  /** Absolute URL that receives Bandwidth's transferDisconnect event for every
+   *  leg of the Nth Dial (the translator's /bw/transfer-leg). Set by the server so
+   *  a Dial action can report DialCallSid/DialCallDuration/DialBridged, which
+   *  Bandwidth's transferComplete event does not carry. The index matches the
+   *  dialIndex the rewriter sees for that Dial's action, so the server can tie
+   *  each leg to its own Dial. Standalone BXML generation leaves it unset. */
+  transferLegUrl?: (dialIndex: number) => string;
+  /** Emit only the verbs after the Nth <Gather> (1-based, document order). Used
+   *  to resume a document when a Gather ends with no input: Twilio continues
+   *  with the following verbs, Bandwidth expects fresh BXML from the gatherUrl. */
+  resumeAfterGather?: number;
 }
 
 export interface TranslateResult {
@@ -173,6 +198,7 @@ const CALLBACK_URL_ATTRS = [
   "recordCompleteUrl",
   "recordingAvailableUrl",
   "transferCompleteUrl",
+  "transferDisconnectUrl",
   "referCompleteUrl",
 ] as const;
 
@@ -208,11 +234,22 @@ function stampCallbackAuth(els: XmlEl[], auth: { username: string; password: str
 export function translateTwiml(twiml: string, opts: TranslateOptions = {}): TranslateResult {
   bxmlByteBudget = MAX_TOTAL_BXML_BYTES;
   connectStreamSeq = 0;
+  gatherSeq = 0;
+  dialSeq = 0;
+  currentTransferLegUrl = opts.transferLegUrl;
   const root = parseTwiml(twiml);
   const findings: Finding[] = [];
-  const rewrite = opts.rewriteUrl ?? ((u: string) => u);
+  const rewrite: RewriteUrl = opts.rewriteUrl ?? ((u: string) => u);
   const els: XmlEl[] = [];
+  // Resuming after a Gather: skip everything through the Nth Gather. Skipped
+  // Gathers still advance gatherSeq so the ones we do emit keep their document
+  // positions, and a later resume lands in the right place.
+  let skipThroughGather = opts.resumeAfterGather ?? 0;
   for (const node of root.children) {
+    if (skipThroughGather > 0) {
+      if (node.name === "Gather" && ++gatherSeq === skipThroughGather) skipThroughGather = 0;
+      continue;
+    }
     const el = translateVerb(node, findings, rewrite);
     if (el) els.push(...el);
   }
@@ -304,7 +341,7 @@ function applyLoop(els: XmlEl[], loop: string | undefined, verb: string, finding
 function translateVerb(
   node: TwimlNode,
   findings: Finding[],
-  rewrite: (url: string, kind: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   switch (node.name) {
     case "Say": {
@@ -374,7 +411,7 @@ function translateVerb(
 function translateGather(
   node: TwimlNode,
   findings: Finding[],
-  rewrite: (u: string, k: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   const attrs: Record<string, string | undefined> = {
     maxDigits: node.attrs.numDigits,
@@ -396,7 +433,15 @@ function translateGather(
         );
     }
   }
-  if (node.attrs.action) attrs.gatherUrl = rewrite(node.attrs.action, "action");
+  // Document position and the empty-result policy travel with the URL so the
+  // server can resume after this Gather when Bandwidth reports no input
+  // (Twilio continues with the next verb unless actionOnEmptyResult="true").
+  const gatherIndex = ++gatherSeq;
+  if (node.attrs.action)
+    attrs.gatherUrl = rewrite(node.attrs.action, "action", {
+      gatherIndex,
+      actionOnEmptyResult: node.attrs.actionOnEmptyResult === "true",
+    });
   else
     warn(
       "Gather",
@@ -411,10 +456,18 @@ function translateGather(
   return [{ name: "Gather", attrs, children }];
 }
 
+// Per-document counter of <Gather> verbs in document order; reset per
+// translateTwiml call (same module-state caveat as bxmlByteBudget).
+let gatherSeq = 0;
+// Per-document counter of <Dial> verbs with an action; same caveat.
+let dialSeq = 0;
+// The server's transferDisconnect endpoint for the current translation, if any.
+let currentTransferLegUrl: ((dialIndex: number) => string) | undefined;
+
 function translateRecord(
   node: TwimlNode,
   findings: Finding[],
-  rewrite: (u: string, k: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   const attrs: Record<string, string | undefined> = {
     maxDuration: node.attrs.maxLength,
@@ -463,7 +516,7 @@ const UNSUPPORTED_DIAL_ATTRS: Record<string, string> = {
 function translateDial(
   node: TwimlNode,
   findings: Finding[],
-  rewrite: (u: string, k: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   const conference = node.children.find((c) => c.name === "Conference");
   if (conference) {
@@ -506,7 +559,10 @@ function translateDial(
 
   warn(
     "Dial",
-    "Child-call status propagation is not fully replicated in P0; validate call-progress behavior.",
+    "Dial action receives DialCallStatus/DialBridged mapped from Bandwidth's transfer result; " +
+      "DialCallSid and DialCallDuration come from the dialed leg's disconnect event and are omitted " +
+      "if it has not arrived when the action fires. As on Twilio, a caller hangup during the " +
+      "transfer ends the session without requesting the action.",
     findings,
   );
   // Twilio Dial attributes the translator cannot map to BXML Transfer. Surfacing
@@ -519,7 +575,21 @@ function translateDial(
     transferCallerId: node.attrs.callerId,
     callTimeout: node.attrs.timeout,
   };
-  if (node.attrs.action) attrs.transferCompleteUrl = rewrite(node.attrs.action, "transfer");
+  if (node.attrs.action) {
+    const dialIndex = ++dialSeq;
+    attrs.transferCompleteUrl = rewrite(node.attrs.action, "transfer", {
+      dialIndex,
+      dialTargets: targets.length,
+    });
+    // Bandwidth's transferComplete names only the original call. The dialed
+    // leg's id, answer time, and end time arrive on its own transferDisconnect
+    // event, which the server joins to the action callback for DialCallSid,
+    // DialCallDuration, and DialBridged.
+    if (currentTransferLegUrl) {
+      const legUrl = currentTransferLegUrl(dialIndex);
+      for (const t of targets) t.attrs = { ...t.attrs, transferDisconnectUrl: legUrl };
+    }
+  }
 
   // Handle Twilio Dial record attribute → prepend StartRecording before Transfer.
   // Twilio values that trigger recording: record-from-answer, record-from-ringing,
@@ -644,7 +714,7 @@ function streamToStartStream(
   stream: TwimlNode,
   mode: "bidirectional" | "unidirectional",
   findings: Finding[],
-  rewrite: (u: string, k: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   if (!stream.attrs.url) return unsupported(stream, findings, "Stream requires a url attribute.");
   warn("Stream", matrix.verbs.Stream.notes, findings);
@@ -676,7 +746,7 @@ let connectStreamSeq = 0;
 function translateConnect(
   node: TwimlNode,
   findings: Finding[],
-  rewrite: (u: string, k: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   const stream = node.children.find((c) => c.name === "Stream");
   if (!stream)
@@ -737,7 +807,7 @@ function translateStop(node: TwimlNode, findings: Finding[]): XmlEl[] | null {
 function translateRefer(
   node: TwimlNode,
   findings: Finding[],
-  rewrite: (u: string, k: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   const sip = node.children.find((c) => c.name === "Sip");
   if (!sip || !sip.text)
@@ -760,7 +830,7 @@ function translateRefer(
 function translateStart(
   node: TwimlNode,
   findings: Finding[],
-  rewrite: (u: string, k: UrlKind) => string,
+  rewrite: RewriteUrl,
 ): XmlEl[] | null {
   // <Start><Stream> is a unidirectional fork (audio out to the bot only).
   const startStream = node.children.find((c) => c.name === "Stream");

@@ -59,7 +59,8 @@ describe("POST /bw/initiate", () => {
       payload: { eventType: "initiate", callId: "c-2", from: "+1", to: "+2", direction: "inbound" },
     });
     expect(res.body).toContain(
-      `gatherUrl="https://translator.test/bw/continue?next=${encodeURIComponent("https://customer.test/menu")}"`,
+      // The Gather's document position rides along so an empty result can resume after it (VAPI-4041).
+      `gatherUrl="https://translator.test/bw/continue?next=${encodeURIComponent("https://customer.test/menu")}&amp;gather=1"`,
     );
   });
 

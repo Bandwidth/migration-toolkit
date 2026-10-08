@@ -29,7 +29,11 @@
       "notes": "DTMF and speech both supported. Per dev.bandwidth.com, BW Gather input accepts dtmf/speech/dtmf_speech.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/programmable-voice/bxml/gather",
       "attributes": {
-        "action": { "bxml": "gatherUrl", "status": "supported" },
+        "action": {
+          "bxml": "gatherUrl",
+          "status": "supported",
+          "notes": "No digits or speech does not request the action; the verbs after the Gather run instead (Twilio semantics). actionOnEmptyResult=\"true\" requests the action with Digits=\"\"."
+        },
         "numDigits": { "bxml": "maxDigits", "status": "supported" },
         "timeout": { "bxml": "firstDigitTimeout", "status": "supported" },
         "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
@@ -72,7 +76,11 @@
       "notes": "Recording callback payloads differ; translator normalizes.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/record",
       "attributes": {
-        "action": { "bxml": "recordCompleteUrl", "status": "supported" },
+        "action": {
+          "bxml": "recordCompleteUrl",
+          "status": "supported",
+          "notes": "The callback carries RecordingUrl, RecordingSid, RecordingDuration. Bandwidth's event has no equivalent of Twilio's Digits."
+        },
         "recordingStatusCallback": { "bxml": "recordingAvailableUrl", "status": "supported", "notes": "Async 'recording ready' webhook. Translator receives the BW recordingAvailableUrl event, reshapes it into Twilio recordingStatusCallback params, and forwards it; RecordingUrl points back at the translator's recording facade. recordingStatusCallbackMethod=GET is not honored (forwarded via POST)." },
         "maxLength": { "bxml": "maxDuration", "status": "supported" },
         "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
@@ -83,12 +91,16 @@
     "Dial": {
       "bxml": "Transfer",
       "status": "partial",
-      "notes": "Number/Sip nouns map to Transfer; Conference noun maps to Conference; Queue and Client nouns are unsupported. Deep Dial semantics (answerOnBridge, child-call status propagation) are not replicated in P0. When the record attribute is set to a recording-enabled value, a BW StartRecording verb is emitted immediately before the Transfer. Dual-channel variants (record-from-answer-dual, record-from-ringing-dual) emit StartRecording with multiChannel=true.",
+      "notes": "Number/Sip nouns map to Transfer; Conference noun maps to Conference; Queue and Client nouns are unsupported. answerOnBridge is not replicated. The Dial action receives DialCallStatus and DialBridged mapped from Bandwidth's transfer result, and DialCallSid/DialCallDuration from the dialed leg's transferDisconnect event when it has arrived. When the record attribute is set to a recording-enabled value, a BW StartRecording verb is emitted immediately before the Transfer. Dual-channel variants (record-from-answer-dual, record-from-ringing-dual) emit StartRecording with multiChannel=true.",
       "docsUrl": "https://dev.bandwidth.com/docs/voice/bxml/transfer",
       "attributes": {
         "callerId": { "bxml": "transferCallerId", "status": "supported" },
         "timeout": { "bxml": "callTimeout", "status": "supported" },
-        "action": { "bxml": "transferCompleteUrl", "status": "supported" },
+        "action": {
+          "bxml": "transferCompleteUrl",
+          "status": "supported",
+          "notes": "The callback carries DialCallStatus, DialBridged, and (from the dialed leg's transferDisconnect) DialCallSid and DialCallDuration. As on Twilio, a caller hangup during the transfer does not request the action."
+        },
         "record": {
           "bxml": "StartRecording",
           "status": "partial",
