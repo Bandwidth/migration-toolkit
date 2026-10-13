@@ -83,8 +83,10 @@ describe("Gather", () => {
       expect(r.bxml).toContain(`firstDigitTimeout="60"`);
       expect(r.bxml).toContain(`interDigitTimeout="60"`);
       const warnings = r.findings.filter((f) => f.severity === "warning");
-      expect(warnings.some((f) => /firstDigitTimeout="100"/.test(f.message))).toBe(true);
-      expect(warnings.some((f) => /interDigitTimeout="100"/.test(f.message))).toBe(true);
+      // Warnings name "timeout" (what the customer wrote), not Bandwidth's
+      // attribute names, but still say which BXML attribute is affected.
+      expect(warnings.some((f) => /timeout="100".*firstDigitTimeout/.test(f.message))).toBe(true);
+      expect(warnings.some((f) => /timeout="100".*interDigitTimeout/.test(f.message))).toBe(true);
     });
 
     it("enforces interDigitTimeout's minimum (1) separately from firstDigitTimeout's minimum (0)", () => {
@@ -96,9 +98,9 @@ describe("Gather", () => {
       // interDigitTimeout's minimum is 1: timeout="0" is raised to 1.
       expect(r.bxml).toContain(`interDigitTimeout="1"`);
       expect(
-        r.findings.some((f) => f.severity === "warning" && /interDigitTimeout="0"/.test(f.message)),
+        r.findings.some((f) => f.severity === "warning" && /timeout="0".*interDigitTimeout/.test(f.message)),
       ).toBe(true);
-      expect(r.findings.some((f) => /firstDigitTimeout="0"/.test(f.message))).toBe(false);
+      expect(r.findings.some((f) => /firstDigitTimeout/.test(f.message))).toBe(false);
     });
 
     it("limits numDigits to Bandwidth's 50-digit maximum", () => {
@@ -119,6 +121,48 @@ describe("Gather", () => {
       expect(r.bxml).toContain(`interDigitTimeout="10"`);
       expect(r.bxml).toContain(`maxDigits="4"`);
       expect(r.findings).toEqual([]);
+    });
+
+    it("treats timeout=\"\" the same as omitted, not as 0", () => {
+      // Number("") is 0, which is in-range for firstDigitTimeout (min 0) but
+      // below interDigitTimeout's minimum (1) -- either way, an empty value
+      // should fall back to Twilio's default (5), not be read as a number.
+      const r = translateTwiml(`<Response><Gather action="/menu" timeout=""/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`firstDigitTimeout="5"`);
+      expect(r.bxml).toContain(`interDigitTimeout="5"`);
+      expect(r.findings).toEqual([]);
+    });
+
+    it("normalizes a non-decimal but in-range value instead of passing it through as written", () => {
+      // Number("0x3C") is 60 in JavaScript, but Bandwidth's BXML parser almost
+      // certainly expects a plain decimal number, not a hex literal.
+      const r = translateTwiml(`<Response><Gather action="/menu" timeout="0x3C"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`firstDigitTimeout="60"`);
+      expect(r.bxml).toContain(`interDigitTimeout="60"`);
+      expect(r.bxml).not.toContain("0x3C");
+    });
+
+    it("normalizes scientific notation to a plain decimal", () => {
+      const r = translateTwiml(`<Response><Gather action="/menu" numDigits="1e1"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`maxDigits="10"`);
+      expect(r.bxml).not.toContain("1e1");
+    });
+
+    it("falls back to Bandwidth's own default and warns when the value isn't a number at all", () => {
+      const r = translateTwiml(`<Response><Gather action="/menu" numDigits="abc"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`maxDigits="50"`);
+      expect(r.bxml).not.toContain("abc");
+      expect(
+        r.findings.some((f) => f.severity === "warning" && /numDigits="abc"/.test(f.message)),
+      ).toBe(true);
     });
   });
 
@@ -185,7 +229,7 @@ describe("Record", () => {
       });
       expect(r.bxml).toContain(`maxDuration="10800"`);
       expect(
-        r.findings.some((f) => f.severity === "warning" && /maxDuration="14400"/.test(f.message)),
+        r.findings.some((f) => f.severity === "warning" && /maxLength="14400".*maxDuration/.test(f.message)),
       ).toBe(true);
     });
 
@@ -194,6 +238,22 @@ describe("Record", () => {
         rewriteUrl: rw,
       });
       expect(r.bxml).toContain(`silenceTimeout="10800"`);
+    });
+
+    it("treats maxLength=\"\" the same as omitted, not as 0", () => {
+      // Number("") is 0, which is below maxDuration's minimum of 1 -- without
+      // treating "" as missing, a maxLength="" cuts a recording off at 1s.
+      const r = translateTwiml(`<Response><Record action="/done" maxLength=""/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`maxDuration="3600"`);
+    });
+
+    it("treats timeout=\"\" the same as omitted, not as 0", () => {
+      const r = translateTwiml(`<Response><Record action="/done" timeout=""/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`silenceTimeout="5"`);
     });
   });
 
@@ -230,6 +290,24 @@ describe("Record", () => {
       });
       expect(r.bxml).toContain(`terminatingDigits="1"`);
       expect(r.findings.some((f) => /finishOnKey="123"/.test(f.message))).toBe(true);
+    });
+
+    it("picks the first valid character in a mixed set rather than blindly the first character", () => {
+      const r = translateTwiml(`<Response><Record action="/done" finishOnKey="ab1"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`terminatingDigits="1"`);
+      expect(r.bxml).not.toContain(`terminatingDigits="a"`);
+    });
+
+    it("drops the attribute and warns when there is no valid key at all, rather than emitting an invalid one", () => {
+      const r = translateTwiml(`<Response><Record action="/done" finishOnKey="a"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).not.toContain("terminatingDigits");
+      expect(
+        r.findings.some((f) => f.severity === "warning" && /finishOnKey="a"/.test(f.message)),
+      ).toBe(true);
     });
   });
 
@@ -288,5 +366,23 @@ describe("Record", () => {
         true,
       );
     });
+  });
+});
+
+describe("repeated identical findings collapse to one (VAPI-4042)", () => {
+  it("a document with many bare Records reports each generic warning once, not once per Record", () => {
+    const manyRecords = Array.from({ length: 10 }, (_, i) => `<Record action="/done${i}"/>`).join("");
+    const r = translateTwiml(`<Response>${manyRecords}</Response>`, { rewriteUrl: rw });
+    const playBeepWarnings = r.findings.filter((f) => /playBeep/.test(f.message));
+    expect(playBeepWarnings).toHaveLength(1);
+  });
+
+  it("does not collapse findings that differ, e.g. out-of-range warnings naming different values", () => {
+    const r = translateTwiml(
+      `<Response><Record action="/a" maxLength="14400"/><Record action="/b" maxLength="20000"/></Response>`,
+      { rewriteUrl: rw },
+    );
+    const maxLengthWarnings = r.findings.filter((f) => /maxLength=/.test(f.message));
+    expect(maxLengthWarnings).toHaveLength(2);
   });
 });
