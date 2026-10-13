@@ -331,6 +331,7 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
       rewriteUrl: rewriter(documentUrl, doc),
       callbackAuth: { username: config.webhookUser, password: config.webhookPassword },
       transferLegUrl: (dialIndex) => `${config.publicBaseUrl}/bw/transfer-leg?dial=${doc}.${dialIndex}`,
+      documentUrl,
       ...extra,
     });
     if (result.hasErrors) {

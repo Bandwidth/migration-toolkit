@@ -529,6 +529,52 @@ describe("/bw/continue recordComplete -> Record action", () => {
   });
 });
 
+// ─── Gather/Record with no action (VAPI-4042) ──────────────────────────────
+
+describe("Gather/Record with no action re-request the current document, like Twilio", () => {
+  it("Gather posts Digits back to the same voice URL that served it", async () => {
+    const VOICE = "https://customer.test/voice";
+    const { app, customerPost } = makeApp({
+      [VOICE]: `<Response><Gather numDigits="1"/><Say>fallback</Say></Response>`,
+    });
+    const first = await initiate(app, "c-noaction-1");
+    const gatherUrl = /gatherUrl="([^"]+)"/.exec(first.body)![1].replace(/&amp;/g, "&");
+    // No action attribute, yet the rewriter still points gatherUrl at /bw/continue
+    // carrying the current document's own URL as `next`.
+    expect(gatherUrl).toContain(encodeURIComponent(VOICE));
+    const res = await app.inject({
+      method: "POST",
+      url: new URL(gatherUrl).pathname + new URL(gatherUrl).search,
+      headers: { authorization: webhookAuth },
+      payload: bwEvent("c-noaction-1", { eventType: "gather", digits: "5" }),
+    });
+    expect(res.statusCode).toBe(200);
+    const { url, params } = customerPost(1)!;
+    expect(url).toBe(VOICE);
+    expect(params.Digits).toBe("5");
+  });
+
+  it("Record posts RecordingUrl back to the same voice URL that served it", async () => {
+    const VOICE = "https://customer.test/voice";
+    const { app, customerPost } = makeApp({
+      [VOICE]: `<Response><Record maxLength="10"/></Response>`,
+    });
+    const first = await initiate(app, "c-noaction-2");
+    const recordUrl = /recordCompleteUrl="([^"]+)"/.exec(first.body)![1].replace(/&amp;/g, "&");
+    expect(recordUrl).toContain(encodeURIComponent(VOICE));
+    const res = await app.inject({
+      method: "POST",
+      url: new URL(recordUrl).pathname + new URL(recordUrl).search,
+      headers: { authorization: webhookAuth },
+      payload: bwEvent("c-noaction-2", { eventType: "recordComplete", recordingId: "r-noaction", duration: "PT4S" }),
+    });
+    expect(res.statusCode).toBe(200);
+    const { url, params } = customerPost(1)!;
+    expect(url).toBe(VOICE);
+    expect(params.RecordingSid).toBe(toRecordingSid("r-noaction"));
+  });
+});
+
 // ─── Gather empty result ─────────────────────────────────────────────────────
 
 describe("/bw/continue gather with no input", () => {

@@ -32,11 +32,11 @@
         "action": {
           "bxml": "gatherUrl",
           "status": "supported",
-          "notes": "No digits or speech does not request the action; the verbs after the Gather run instead (Twilio semantics). actionOnEmptyResult=\"true\" requests the action with Digits=\"\"."
+          "notes": "No digits or speech does not request the action; the verbs after the Gather run instead (Twilio semantics). actionOnEmptyResult=\"true\" requests the action with Digits=\"\". A Gather with no action attribute re-requests the current document, matching Twilio, when the server knows the document's URL (standalone BXML generation keeps the original warning instead)."
         },
-        "numDigits": { "bxml": "maxDigits", "status": "supported" },
-        "timeout": { "bxml": "firstDigitTimeout", "status": "supported" },
-        "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
+        "numDigits": { "bxml": "maxDigits", "status": "supported", "notes": "Clamped to Bandwidth's 1-50 range with a warning naming the original value; left unset (Bandwidth's own default of 50) when omitted." },
+        "timeout": { "bxml": "firstDigitTimeout / interDigitTimeout", "status": "supported", "notes": "Twilio's single timeout (default 5s) sets both Bandwidth attributes, since Bandwidth splits the pause-before-first-digit and gap-between-digits behavior Twilio combines into one value. Each is clamped independently to its own range (firstDigitTimeout 0-60, interDigitTimeout 1-60) with a warning naming the original value." },
+        "finishOnKey": { "bxml": "terminatingDigits", "status": "supported", "notes": "Twilio's default (\"#\") is emitted explicitly when omitted, since Bandwidth's own default for this attribute is \"\" (disabled). finishOnKey=\"\" passes through unchanged (both systems treat it as disabled)." },
         "input": { "bxml": "input", "status": "supported", "notes": "Twilio dtmf / speech / 'dtmf speech' map to BW input dtmf / speech / dtmf_speech. Speech results arrive as the BW gather event's text field, surfaced to the customer app as Twilio's SpeechResult param." }
       }
     },
@@ -79,13 +79,15 @@
         "action": {
           "bxml": "recordCompleteUrl",
           "status": "supported",
-          "notes": "The callback carries RecordingUrl, RecordingSid, RecordingDuration. Bandwidth's event has no equivalent of Twilio's Digits."
+          "notes": "The callback carries RecordingUrl, RecordingSid, RecordingDuration. Bandwidth's event has no equivalent of Twilio's Digits. A Record with no action attribute re-requests the current document, matching Twilio, when the server knows the document's URL (standalone BXML generation keeps the original warning instead)."
         },
         "recordingStatusCallback": { "bxml": "recordingAvailableUrl", "status": "supported", "notes": "Async 'recording ready' webhook. Translator receives the BW recordingAvailableUrl event, reshapes it into Twilio recordingStatusCallback params, and forwards it; RecordingUrl points back at the translator's recording facade. recordingStatusCallbackMethod=GET is not honored (forwarded via POST)." },
-        "maxLength": { "bxml": "maxDuration", "status": "supported" },
-        "finishOnKey": { "bxml": "terminatingDigits", "status": "supported" },
+        "maxLength": { "bxml": "maxDuration", "status": "supported", "notes": "Twilio's default (3600s) is emitted explicitly when omitted, since Bandwidth's own default is 60s. Clamped to Bandwidth's 10800s (3h) maximum with a warning naming the original value." },
+        "timeout": { "bxml": "silenceTimeout", "status": "supported", "notes": "Not previously mapped at all, so a recording never stopped on silence; now defaults to Twilio's 5 seconds when omitted and is clamped to Bandwidth's 10800s maximum. timeout=\"0\" (Twilio: disable) and silenceTimeout=\"0\" (Bandwidth: no timeout) agree, so it passes through unchanged." },
+        "finishOnKey": { "bxml": "terminatingDigits", "status": "partial", "notes": "Bandwidth's Record takes one terminating digit; Twilio's finishOnKey is a set (default \"1234567890*#\", any key). A single character passes through unchanged; a multi-character set (including the omitted default) is narrowed to one digit, preferring '#' then '*' then the first character, with a warning." },
         "transcribe": { "bxml": "transcribe", "status": "partial", "notes": "Engine and callback shape differ." },
-        "playBeep": { "bxml": null, "status": "partial", "notes": "No direct equivalent; translator can prepend a beep PlayAudio later." }
+        "playBeep": { "bxml": null, "status": "partial", "notes": "No direct equivalent; translator can prepend a beep PlayAudio later. Twilio's default is true (plays a beep), so a warning is emitted unless playBeep is explicitly \"false\" (the one value Bandwidth's no-beep behavior matches)." },
+        "trim": { "bxml": null, "status": "partial", "notes": "No equivalent; Bandwidth never trims silence. Twilio's default is trim-silence, so a warning is emitted unless trim is explicitly \"do-not-trim\" (the one value Bandwidth's never-trims behavior matches)." }
       }
     },
     "Dial": {

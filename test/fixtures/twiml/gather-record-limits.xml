@@ -1,0 +1,4 @@
+<Response>
+  <Gather action="/menu" timeout="90" numDigits="75" finishOnKey=""/>
+  <Record action="/voicemail" maxLength="20000" finishOnKey="123" timeout="0"/>
+</Response>

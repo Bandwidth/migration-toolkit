@@ -100,8 +100,8 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
   Redirect, Record, Number, Sip (translate cleanly to BXML). A few of these
   still drop attributes safely rather than silently: `Say`/`Play`'s
   `loop="0"` (infinite) can't be expressed inline in BXML, so it emits once and
-  warns; `Record`'s `transcribe` and `playBeep` attributes have no direct BXML
-  equivalent.
+  warns; `Record`'s `transcribe`, `playBeep`, and `trim` attributes have no
+  direct BXML equivalent.
 - **Lossy / partial (feature loss — needs a human decision):**
   - `Reject` — maps to `Hangup`, but Bandwidth answers before hanging up, so the
     caller may be billed for a short call.
@@ -122,10 +122,26 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     TwiML document and re-translates the verbs after that Gather. Set
     `actionOnEmptyResult="true"` to request the action with `Digits=""` instead.
     On a translator instance that has not seen the document (restart, second
-    replica) the action is requested as a fallback.
+    replica) the action is requested as a fallback. A Gather with no `action`
+    attribute re-requests the current document, as on Twilio. Twilio's
+    defaults are emitted explicitly rather than left to Bandwidth's own
+    (different) defaults: `finishOnKey="#"`, and `timeout` (default 5) sets
+    both `firstDigitTimeout` and `interDigitTimeout`. `numDigits`, `timeout`,
+    and `finishOnKey` (on `Record`, below) are clamped to Bandwidth's
+    documented ranges with a warning naming the original value.
   - `Record` — the `action` receives `RecordingUrl`, `RecordingSid`, and
     `RecordingDuration` from Bandwidth's `recordComplete`; Bandwidth's event has
-    no equivalent of Twilio's `Digits` (the key that stopped the recording).
+    no equivalent of Twilio's `Digits` (the key that stopped the recording). A
+    Record with no `action` attribute re-requests the current document, as on
+    Twilio. `maxLength` (default 3600s) and `timeout` (Twilio: silence ends the
+    recording, default 5s, mapped to Bandwidth's `silenceTimeout`, which
+    previously had no BXML equivalent at all) are emitted explicitly rather
+    than left to Bandwidth's own defaults. `finishOnKey` is narrowed to
+    Bandwidth's single terminating digit (preferring `#`, then `*`, then the
+    first character) since Bandwidth cannot represent Twilio's default set of
+    any key. `playBeep` and `trim` warn unless set to the one value
+    (`"false"` / `"do-not-trim"`) where Bandwidth's fixed behavior (no beep,
+    never trims) happens to match Twilio's.
   - `Start` — the `Transcription` noun maps to `StartTranscription`; the
     `Siprec` and `VirtualAgent` nouns are unsupported.
   - `Refer` — Bandwidth only honors `Refer` on inbound SIP URI calls, so a PSTN
