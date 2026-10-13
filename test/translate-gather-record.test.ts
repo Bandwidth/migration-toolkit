@@ -75,8 +75,8 @@ describe("Gather", () => {
     });
   });
 
-  describe("clamping to Bandwidth's ranges (VAPI-4042)", () => {
-    it("clamps an out-of-range timeout for both firstDigitTimeout and interDigitTimeout, with a warning for each", () => {
+  describe("keeping values within Bandwidth's limits (VAPI-4042)", () => {
+    it("brings an out-of-range timeout back within limits for both firstDigitTimeout and interDigitTimeout, with a warning for each", () => {
       const r = translateTwiml(`<Response><Gather action="/menu" timeout="100"/></Response>`, {
         rewriteUrl: rw,
       });
@@ -87,13 +87,13 @@ describe("Gather", () => {
       expect(warnings.some((f) => /interDigitTimeout="100"/.test(f.message))).toBe(true);
     });
 
-    it("clamps interDigitTimeout's floor (1) separately from firstDigitTimeout's floor (0)", () => {
+    it("enforces interDigitTimeout's minimum (1) separately from firstDigitTimeout's minimum (0)", () => {
       const r = translateTwiml(`<Response><Gather action="/menu" timeout="0"/></Response>`, {
         rewriteUrl: rw,
       });
-      // firstDigitTimeout="0" is in range (0-60): no clamp.
+      // firstDigitTimeout="0" is in range (0-60): left alone.
       expect(r.bxml).toContain(`firstDigitTimeout="0"`);
-      // interDigitTimeout's minimum is 1: timeout="0" is clamped up.
+      // interDigitTimeout's minimum is 1: timeout="0" is raised to 1.
       expect(r.bxml).toContain(`interDigitTimeout="1"`);
       expect(
         r.findings.some((f) => f.severity === "warning" && /interDigitTimeout="0"/.test(f.message)),
@@ -101,7 +101,7 @@ describe("Gather", () => {
       expect(r.findings.some((f) => /firstDigitTimeout="0"/.test(f.message))).toBe(false);
     });
 
-    it("clamps numDigits above Bandwidth's 50-digit maximum", () => {
+    it("limits numDigits to Bandwidth's 50-digit maximum", () => {
       const r = translateTwiml(`<Response><Gather action="/menu" numDigits="75"/></Response>`, {
         rewriteUrl: rw,
       });
@@ -178,8 +178,8 @@ describe("Record", () => {
     });
   });
 
-  describe("clamping to Bandwidth's ranges (VAPI-4042)", () => {
-    it("clamps maxLength above Bandwidth's 10800s (3h) maximum", () => {
+  describe("keeping values within Bandwidth's limits (VAPI-4042)", () => {
+    it("limits maxLength to Bandwidth's 10800s (3h) maximum", () => {
       const r = translateTwiml(`<Response><Record action="/done" maxLength="14400"/></Response>`, {
         rewriteUrl: rw,
       });
@@ -189,7 +189,7 @@ describe("Record", () => {
       ).toBe(true);
     });
 
-    it("clamps timeout (silenceTimeout) above Bandwidth's 10800s maximum", () => {
+    it("limits timeout (silenceTimeout) to Bandwidth's 10800s maximum", () => {
       const r = translateTwiml(`<Response><Record action="/done" timeout="99999"/></Response>`, {
         rewriteUrl: rw,
       });

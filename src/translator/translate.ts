@@ -301,11 +301,11 @@ function clampAttr(
   const n = Number(value);
   if (!Number.isFinite(n)) return value;
   if (n < min) {
-    warn(verb, `${bxmlAttr}="${value}" is below Bandwidth's minimum of ${min}; clamped to ${min}.`, findings);
+    warn(verb, `${bxmlAttr}="${value}" is below Bandwidth's minimum of ${min}; using ${min} instead.`, findings);
     return String(min);
   }
   if (n > max) {
-    warn(verb, `${bxmlAttr}="${value}" exceeds Bandwidth's maximum of ${max}; clamped to ${max}.`, findings);
+    warn(verb, `${bxmlAttr}="${value}" is above Bandwidth's maximum of ${max}; using ${max} instead.`, findings);
     return String(max);
   }
   return value;

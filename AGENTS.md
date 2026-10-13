@@ -127,8 +127,9 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     defaults are emitted explicitly rather than left to Bandwidth's own
     (different) defaults: `finishOnKey="#"`, and `timeout` (default 5) sets
     both `firstDigitTimeout` and `interDigitTimeout`. `numDigits`, `timeout`,
-    and `finishOnKey` (on `Record`, below) are clamped to Bandwidth's
-    documented ranges with a warning naming the original value.
+    and `finishOnKey` (on `Record`, below) are kept within the ranges
+    Bandwidth documents, with a warning naming the original value if it
+    had to change.
   - `Record` — the `action` receives `RecordingUrl`, `RecordingSid`, and
     `RecordingDuration` from Bandwidth's `recordComplete`; Bandwidth's event has
     no equivalent of Twilio's `Digits` (the key that stopped the recording). A
