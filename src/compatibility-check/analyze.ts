@@ -1,5 +1,5 @@
 import { loadMatrix } from "../matrix/load.js";
-import { translateTwiml, type Finding } from "../translator/translate.js";
+import { translateTwiml, dedupeFindings, type Finding } from "../translator/translate.js";
 
 const matrix = loadMatrix();
 
@@ -68,6 +68,5 @@ export function analyzeSource(file: string, source: string): FileAnalysis {
     }
   }
 
-  const dedup = new Map(findings.map((f) => [`${f.severity}:${f.verb}:${f.message}`, f]));
-  return { file, verbs: [...verbs], findings: [...dedup.values()], sdkDetected };
+  return { file, verbs: [...verbs], findings: dedupeFindings(findings), sdkDetected };
 }

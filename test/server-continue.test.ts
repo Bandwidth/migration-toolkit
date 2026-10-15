@@ -573,6 +573,51 @@ describe("Gather/Record with no action re-request the current document, like Twi
     expect(url).toBe(VOICE);
     expect(params.RecordingSid).toBe(toRecordingSid("r-noaction"));
   });
+
+  it("resumes past the Gather on empty input when the same instance has the document, even with no action", async () => {
+    const VOICE = "https://customer.test/voice";
+    const { app, posts } = makeApp({
+      [VOICE]: `<Response><Gather numDigits="1"/><Say>fallback</Say></Response>`,
+    });
+    const first = await initiate(app, "c-noaction-3");
+    const gatherUrl = /gatherUrl="([^"]+)"/.exec(first.body)![1].replace(/&amp;/g, "&");
+    const res = await app.inject({
+      method: "POST",
+      url: new URL(gatherUrl).pathname + new URL(gatherUrl).search,
+      headers: { authorization: webhookAuth },
+      payload: bwEvent("c-noaction-3", { eventType: "gather", digits: "" }),
+    });
+    expect(res.body).toContain("fallback");
+    expect(posts()).toBe(1); // resumed locally; no request to the customer at all
+  });
+
+  it("ends the call, rather than replaying the same prompt forever, when a different instance has no document to resume", async () => {
+    // A Gather with no action self-references the document that served it. If
+    // the empty-result callback lands on an instance with no cached copy of
+    // that document (restart, another replica), falling back to "request the
+    // action anyway" would re-fetch and replay this exact same prompt -- and
+    // since nothing about the situation changes, it would keep replaying
+    // forever. Two separate makeApp() calls simulate two separate instances
+    // sharing no in-memory state.
+    const VOICE = "https://customer.test/voice";
+    const docs = { [VOICE]: `<Response><Gather numDigits="1"/><Say>fallback</Say></Response>` };
+    const { app: instanceA } = makeApp(docs);
+    const first = await initiate(instanceA, "c-noaction-4");
+    const gatherUrl = /gatherUrl="([^"]+)"/.exec(first.body)![1].replace(/&amp;/g, "&");
+    expect(gatherUrl).toContain("&self=1");
+
+    const { app: instanceB, posts: postsB } = makeApp(docs);
+    const res = await instanceB.inject({
+      method: "POST",
+      url: new URL(gatherUrl).pathname + new URL(gatherUrl).search,
+      headers: { authorization: webhookAuth },
+      payload: bwEvent("c-noaction-4", { eventType: "gather", digits: "" }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain("<Gather"); // not replaying the same prompt
+    expect(res.body).not.toContain("fallback"); // can't know what follows without the cached document
+    expect(postsB()).toBe(0); // no request to the customer either
+  });
 });
 
 // ─── Gather empty result ─────────────────────────────────────────────────────

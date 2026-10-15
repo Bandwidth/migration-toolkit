@@ -26,6 +26,16 @@ vr.enqueue("support");`;
     const a = analyzeSource("other.js", `console.log("nothing here")`);
     expect(a.verbs).toEqual([]);
   });
+
+  it("collapses the same finding repeated across several <Response> blocks in one file (VAPI-4042)", () => {
+    // Each bare <Record> independently warns about playBeep; a file with many
+    // of them (even across separate embedded documents) should report it
+    // once, not once per occurrence, via the shared dedupeFindings helper.
+    const src = Array.from({ length: 5 }, (_, i) => `\`<Response><Record action="/done${i}"/></Response>\``).join(";\n");
+    const a = analyzeSource("many-records.js", src);
+    const playBeepFindings = a.findings.filter((f) => /playBeep/.test(f.message));
+    expect(playBeepFindings).toHaveLength(1);
+  });
 });
 
 describe("report", () => {

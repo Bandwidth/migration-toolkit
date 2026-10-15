@@ -22,6 +22,15 @@ export interface RewriteContext {
   dialIndex?: number;
   /** How many targets (Number/Sip) this <Dial> rings, i.e. how many legs to expect. */
   dialTargets?: number;
+  /** This URL was generated because the verb had no action attribute and the
+   *  server fell back to the document's own URL (see TranslateOptions.documentUrl),
+   *  not because the customer wrote this URL themselves. Lets the server tell
+   *  "re-request the customer's real action" apart from "re-request myself",
+   *  which matters when there is no cached document to resume after a Gather
+   *  with no input: re-requesting a real action is a reasonable fallback, but
+   *  re-requesting the document that produced this same Gather would just
+   *  replay the same prompt forever. */
+  selfReference?: boolean;
 }
 
 export type RewriteUrl = (url: string, kind: UrlKind, ctx?: RewriteContext) => string;
@@ -270,18 +279,21 @@ export function translateTwiml(twiml: string, opts: TranslateOptions = {}): Tran
 }
 
 /**
- * Collapses findings that repeat the exact same verb+message within one
- * document to a single occurrence. A generic finding (e.g. "Record's playBeep
- * defaults to true...") says nothing new the second time it's reported for
- * the same verb, and a document with many instances of one verb (e.g. 50
- * bare <Record>s) would otherwise bury any findings that differ — like the
+ * Collapses findings that repeat the exact same severity+verb+message to a
+ * single occurrence. A generic finding (e.g. "Record's playBeep defaults to
+ * true...") says nothing new the second time it's reported for the same
+ * verb, and a document with many instances of one verb (e.g. 50 bare
+ * <Record>s) would otherwise bury any findings that differ — like the
  * out-of-range warnings, which embed the offending value and so remain
  * distinct per occurrence. Order is preserved; only later duplicates drop.
+ * Exported so compatibility-check's analyzeSource can apply the same rule
+ * across the several <Response> blocks one file may contain, instead of
+ * keeping its own separate dedup logic that could drift from this one.
  */
-function dedupeFindings(findings: Finding[]): Finding[] {
+export function dedupeFindings(findings: Finding[]): Finding[] {
   const seen = new Set<string>();
   return findings.filter((f) => {
-    const key = `${f.verb}\u0000${f.message}`;
+    const key = `${f.severity}\u0000${f.verb}\u0000${f.message}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -301,6 +313,20 @@ function unsupported(node: TwimlNode, findings: Finding[], detail?: string): nul
 
 function warn(verb: string, message: string, findings: Finding[]): void {
   findings.push({ severity: "warning", verb, message, docsUrl: matrix.verbs[verb]?.docsUrl });
+}
+
+/** True for an attribute that's absent or holds only whitespace — e.g. a
+ *  template variable that rendered empty. Treated the same as "not set" for
+ *  numeric attributes: JavaScript's Number() reads whitespace-only text as 0
+ *  (Number(" ") === 0), which would otherwise look like a real, in-range zero
+ *  rather than a value nobody actually set. */
+function isBlank(value: string | undefined): boolean {
+  return value === undefined || value.trim() === "";
+}
+
+/** `value`, or `fallback` when `value` is blank (see isBlank). */
+function orDefault(value: string | undefined, fallback: string): string {
+  return isBlank(value) ? fallback : (value as string);
 }
 
 /**
@@ -362,7 +388,7 @@ function resolveActionUrl(
   ctx?: RewriteContext,
 ): string | undefined {
   if (action) return rewrite(action, kind, ctx);
-  if (currentDocumentUrl !== undefined) return rewrite(currentDocumentUrl, kind, ctx);
+  if (currentDocumentUrl !== undefined) return rewrite(currentDocumentUrl, kind, { ...ctx, selfReference: true });
   warn(
     verb,
     `${verb} without an action attribute re-requests the current document URL on Twilio; set an explicit action for identical behavior through the translator.`,
@@ -513,21 +539,17 @@ function translateGather(
   // Bandwidth happens to default both to 5s on its own, so an omitted timeout
   // is a no-op either way — the real fix is that an EXPLICIT timeout used to
   // only reach firstDigitTimeout, leaving interDigitTimeout at Bandwidth's
-  // default regardless of what the customer set. timeout="" is treated the
-  // same as omitted: Twilio doesn't accept a blank duration either.
-  const timeout = node.attrs.timeout || "5";
+  // default regardless of what the customer set. A blank timeout (empty or
+  // all whitespace) is treated the same as omitted: Twilio doesn't accept a
+  // blank duration either.
+  const timeout = orDefault(node.attrs.timeout, "5");
   const attrs: Record<string, string | undefined> = {
-    maxDigits: node.attrs.numDigits
-      ? clampAttr("Gather", "numDigits", "maxDigits", node.attrs.numDigits, 1, 50, "50", findings)
-      : undefined,
+    maxDigits: isBlank(node.attrs.numDigits)
+      ? undefined
+      : clampAttr("Gather", "numDigits", "maxDigits", node.attrs.numDigits as string, 1, 50, "50", findings),
     firstDigitTimeout: clampAttr("Gather", "timeout", "firstDigitTimeout", timeout, 0, 60, "5", findings),
     interDigitTimeout: clampAttr("Gather", "timeout", "interDigitTimeout", timeout, 1, 60, "5", findings),
-    // Twilio's default finishOnKey is "#"; Bandwidth's own default for
-    // terminatingDigits is "" (disabled), so the omitted case must be explicit.
-    // finishOnKey="" (Twilio: disable) passes through unchanged, matching
-    // Bandwidth's own disable value — unlike timeout/maxLength above, an
-    // empty finishOnKey is a real, documented "off" value on both sides.
-    terminatingDigits: node.attrs.finishOnKey ?? "#",
+    terminatingDigits: gatherTerminatingDigits(node.attrs.finishOnKey, findings),
   };
   // Twilio input: "dtmf" | "speech" | "dtmf speech". BW: dtmf | speech | dtmf_speech.
   if (node.attrs.input) {
@@ -569,23 +591,50 @@ let currentTransferLegUrl: ((dialIndex: number) => string) | undefined;
 // (the server does; standalone BXML generation does not). See documentUrl.
 let currentDocumentUrl: string | undefined;
 
-// The only characters Bandwidth's Record terminatingDigits can hold.
-const RECORD_TERMINATING_KEYS = new Set([..."0123456789*#"]);
+// The only characters Bandwidth recognizes as a key in either verb's
+// terminatingDigits: Gather's set, or the one character Record takes.
+const VALID_TERMINATING_KEYS = new Set([..."0123456789*#"]);
+
+/**
+ * Keeps only the characters Bandwidth recognizes as keys in a Gather's
+ * finishOnKey — a set, like Twilio's: any of these ends the Gather. A
+ * character outside 0-9/*\/# would never match a real key press, silently
+ * disabling the feature the same way an entirely invalid value would, so
+ * each invalid character is dropped — with a warning — rather than passed
+ * through for Bandwidth to silently ignore. Twilio's default ("#") is exactly
+ * matched by Bandwidth's explicit "#" (unlike Record's default, which only
+ * partially matches — see recordTerminatingDigits), so the omitted case
+ * doesn't need a warning.
+ */
+function gatherTerminatingDigits(finishOnKey: string | undefined, findings: Finding[]): string {
+  if (finishOnKey === undefined) return "#";
+  if (finishOnKey === "") return ""; // both systems treat this as "disabled"
+  const valid = [...finishOnKey].filter((c) => VALID_TERMINATING_KEYS.has(c)).join("");
+  if (valid !== finishOnKey)
+    warn(
+      "Gather",
+      `finishOnKey="${finishOnKey}" has a character Bandwidth doesn't recognize as a key (only 0-9, "*", and "#" work); using "${valid}" instead.`,
+      findings,
+    );
+  return valid;
+}
 
 /**
  * Bandwidth's Record terminatingDigits takes a single character from
- * `RECORD_TERMINATING_KEYS`, unlike Gather's set of acceptable characters and
+ * `VALID_TERMINATING_KEYS`, unlike Gather's set of acceptable characters and
  * Twilio's own default of "any key" (1234567890*#). Twilio's default and
  * Bandwidth's own default ("#") happen to agree on "#" stopping the
  * recording, so the omitted case is a partial match: only "#" stops it here,
  * not the other nine keys. An explicit multi-character finishOnKey is
  * narrowed the same way, preferring "#" then "*" then the first valid
  * character present, since Bandwidth cannot represent a set. A value with no
- * valid character at all (e.g. "a") can't be narrowed to anything, so it's
- * dropped — letting Bandwidth's own default ("#") apply — rather than
- * emitting a value Bandwidth doesn't recognize as a key.
+ * valid character at all (e.g. "a") can't be narrowed to anything; on Twilio
+ * that value would never match a real key either, so nothing should stop the
+ * recording early — emitting Bandwidth's own default ("#") instead would
+ * introduce a stop key the customer never asked for, so this disables the
+ * feature ("") rather than falling back to it.
  */
-function recordTerminatingDigits(finishOnKey: string | undefined, findings: Finding[]): string | undefined {
+function recordTerminatingDigits(finishOnKey: string | undefined, findings: Finding[]): string {
   if (finishOnKey === undefined) {
     warn(
       "Record",
@@ -595,14 +644,14 @@ function recordTerminatingDigits(finishOnKey: string | undefined, findings: Find
     return "#";
   }
   if (finishOnKey === "") return ""; // both systems treat this as "disabled"
-  const valid = [...finishOnKey].filter((c) => RECORD_TERMINATING_KEYS.has(c));
+  const valid = [...finishOnKey].filter((c) => VALID_TERMINATING_KEYS.has(c));
   if (valid.length === 0) {
     warn(
       "Record",
-      `finishOnKey="${finishOnKey}" has no digit, "*", or "#" for Bandwidth's Record to use as a terminating key; leaving it at Bandwidth's own default ("#") instead.`,
+      `finishOnKey="${finishOnKey}" has no digit, "*", or "#" for Bandwidth's Record to use as a terminating key; no key will stop the recording early (the way none of "${finishOnKey}" would stop it on Twilio either).`,
       findings,
     );
-    return undefined;
+    return "";
   }
   if (finishOnKey.length === 1) return finishOnKey; // the one character is already valid: exact match
   const chosen = valid.includes("#") ? "#" : valid.includes("*") ? "*" : valid[0]!;
@@ -624,11 +673,12 @@ function translateRecord(
   // short at a minute. Twilio's timeout (silence ends the recording) has no
   // BXML attribute at all today; silenceTimeout fills that gap. Twilio's
   // timeout="0" (disable) and Bandwidth's silenceTimeout="0" (no timeout)
-  // agree, so no special-casing is needed for that value. Empty strings are
-  // treated the same as omitted: Twilio doesn't accept a blank duration either.
+  // agree, so no special-casing is needed for that value. A blank value
+  // (empty or all whitespace) is treated the same as omitted: Twilio doesn't
+  // accept a blank duration either.
   const attrs: Record<string, string | undefined> = {
-    maxDuration: clampAttr("Record", "maxLength", "maxDuration", node.attrs.maxLength || "3600", 1, 10800, "3600", findings),
-    silenceTimeout: clampAttr("Record", "timeout", "silenceTimeout", node.attrs.timeout || "5", 0, 10800, "5", findings),
+    maxDuration: clampAttr("Record", "maxLength", "maxDuration", orDefault(node.attrs.maxLength, "3600"), 1, 10800, "3600", findings),
+    silenceTimeout: clampAttr("Record", "timeout", "silenceTimeout", orDefault(node.attrs.timeout, "5"), 0, 10800, "5", findings),
     terminatingDigits: recordTerminatingDigits(node.attrs.finishOnKey, findings),
     recordCompleteUrl: resolveActionUrl("Record", node.attrs.action, "record", rewrite, findings),
   };

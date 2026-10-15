@@ -63,6 +63,25 @@ describe("Gather", () => {
       expect(r.findings).toEqual([]);
     });
 
+    it("drops a character Bandwidth doesn't recognize as a key, and warns", () => {
+      // "ab" would never match a real key press, so it would silently disable
+      // the stop-key feature if passed through as written.
+      const r = translateTwiml(`<Response><Gather action="/menu" finishOnKey="ab"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).not.toContain(`terminatingDigits="ab"`);
+      expect(
+        r.findings.some((f) => f.severity === "warning" && /finishOnKey="ab"/.test(f.message)),
+      ).toBe(true);
+    });
+
+    it("keeps the valid characters in a mixed set and drops only the invalid one", () => {
+      const r = translateTwiml(`<Response><Gather action="/menu" finishOnKey="1a#"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`terminatingDigits="1#"`);
+    });
+
     it("emits timeout's Twilio default (5) as both firstDigitTimeout and interDigitTimeout when omitted", () => {
       const r = translateTwiml(`<Response><Gather action="/menu"/></Response>`, { rewriteUrl: rw });
       expect(r.bxml).toContain(`firstDigitTimeout="5"`);
@@ -135,6 +154,25 @@ describe("Gather", () => {
       expect(r.findings).toEqual([]);
     });
 
+    it("treats a whitespace-only timeout the same as empty, not as 0", () => {
+      // Number(" ") is also 0 -- a template variable that rendered as a
+      // space, not nothing, must not be read as a real zero either.
+      const r = translateTwiml(`<Response><Gather action="/menu" timeout="  "/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`firstDigitTimeout="5"`);
+      expect(r.bxml).toContain(`interDigitTimeout="5"`);
+      expect(r.findings).toEqual([]);
+    });
+
+    it("treats a whitespace-only numDigits the same as omitted", () => {
+      const r = translateTwiml(`<Response><Gather action="/menu" numDigits=" "/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).not.toContain("maxDigits");
+      expect(r.findings).toEqual([]);
+    });
+
     it("normalizes a non-decimal but in-range value instead of passing it through as written", () => {
       // Number("0x3C") is 60 in JavaScript, but Bandwidth's BXML parser almost
       // certainly expects a plain decimal number, not a hex literal.
@@ -176,9 +214,10 @@ describe("Gather", () => {
       expect(r.bxml).toContain(`gatherUrl="https://translator.test/bw/continue?next=${encodeURIComponent(base)}"`);
       expect(r.findings.some((f) => /action attribute/.test(f.message))).toBe(false);
       // The rewriter still gets the Gather's document position and empty-result
-      // flag, exactly as it would for an explicit action.
+      // flag, exactly as it would for an explicit action, plus selfReference so
+      // the server can tell this apart from a real customer action.
       const call = calls.find((c) => c.kind === "action");
-      expect(call?.ctx).toEqual({ gatherIndex: 1, actionOnEmptyResult: false });
+      expect(call?.ctx).toEqual({ gatherIndex: 1, actionOnEmptyResult: false, selfReference: true });
     });
 
     it("still warns when no documentUrl is given (standalone BXML generation has no server to re-request)", () => {
@@ -255,6 +294,20 @@ describe("Record", () => {
       });
       expect(r.bxml).toContain(`silenceTimeout="5"`);
     });
+
+    it("treats a whitespace-only maxLength the same as empty, not as 0", () => {
+      const r = translateTwiml(`<Response><Record action="/done" maxLength="   "/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`maxDuration="3600"`);
+    });
+
+    it("treats a whitespace-only timeout the same as empty, not as 0", () => {
+      const r = translateTwiml(`<Response><Record action="/done" timeout="   "/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`silenceTimeout="5"`);
+    });
   });
 
   describe("finishOnKey -> a single terminatingDigit (VAPI-4042)", () => {
@@ -300,11 +353,14 @@ describe("Record", () => {
       expect(r.bxml).not.toContain(`terminatingDigits="a"`);
     });
 
-    it("drops the attribute and warns when there is no valid key at all, rather than emitting an invalid one", () => {
+    it("disables the stop key and warns when there is no valid key at all, rather than falling back to Bandwidth's own default", () => {
+      // On Twilio, "a" never matches a real key either, so no key stops the
+      // recording early. Falling back to Bandwidth's own default ("#") would
+      // introduce a stop key the customer never asked for.
       const r = translateTwiml(`<Response><Record action="/done" finishOnKey="a"/></Response>`, {
         rewriteUrl: rw,
       });
-      expect(r.bxml).not.toContain("terminatingDigits");
+      expect(r.bxml).toContain(`terminatingDigits=""`);
       expect(
         r.findings.some((f) => f.severity === "warning" && /finishOnKey="a"/.test(f.message)),
       ).toBe(true);
