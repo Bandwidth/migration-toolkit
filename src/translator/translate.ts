@@ -330,35 +330,72 @@ function orDefault(value: string | undefined, fallback: string): string {
 }
 
 /**
- * Keeps a numeric TwiML attribute within the range Bandwidth documents for
- * the BXML attribute it maps to, warning when the original value had to
- * change. Warnings name the Twilio attribute the customer actually wrote
- * (not Bandwidth's name for it), so they can find it in their own TwiML.
- * A value JavaScript's Number() can't turn into a finite number at all (empty,
- * "abc", "Infinity") warns and falls back to `fallback` rather than being
- * passed through — Bandwidth's BXML parser expects a plain decimal number
- * here, and silently forwarding "abc" would just move today's rejected-call
- * problem from "out of range" to "not a number in the first place". Any value
- * that IS a number (including forms Bandwidth almost certainly doesn't accept,
- * like "0x3C" or "1e1") is normalized to its plain decimal form before being
- * returned, in range or not, so the generated BXML never carries a hex or
- * scientific-notation string.
+ * Formats a finite number as plain decimal text. `String(n)` switches to
+ * scientific notation for very small magnitudes (`String(0.0000001)` is
+ * `"1e-7"`), which Bandwidth's BXML parser almost certainly doesn't expect
+ * for a duration or count; this always returns a plain decimal string.
  */
-function clampAttr(
+function toPlainDecimal(n: number): string {
+  const s = String(n);
+  if (!/e/i.test(s)) return s;
+  return n.toFixed(20).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/**
+ * Resolves a TwiML attribute to a plain, finite decimal number, warning once
+ * and falling back to `fallback` when it isn't a usable number at all (empty,
+ * "abc", "Infinity") rather than being passed through — Bandwidth's BXML
+ * parser expects a plain decimal number here, and silently forwarding "abc"
+ * would just move today's rejected-call problem from "out of range" to "not
+ * a number in the first place". A value that IS a number (including forms
+ * Bandwidth almost certainly doesn't accept, like "0x3C" or "1e1") is
+ * normalized to its plain decimal form. Blank input (see isBlank) should be
+ * resolved to a default by the caller before this runs, so this only ever
+ * warns about a value that's actually present but unusable.
+ */
+function resolveNumeric(verb: string, twilioAttr: string, value: string, fallback: string, findings: Finding[]): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    warn(verb, `${twilioAttr}="${value}" isn't a plain number Bandwidth can use; using ${fallback} instead.`, findings);
+    return fallback;
+  }
+  return toPlainDecimal(n);
+}
+
+/**
+ * Rounds an already-numeric value (see resolveNumeric) to the nearest whole
+ * number, warning if it wasn't one. For a *count* — Gather's numDigits is the
+ * only one of these attributes — a fraction has no real meaning (there's no
+ * such thing as collecting 2.5 digits), unlike the duration attributes
+ * (timeout, maxLength), where Bandwidth's own docs allow decimal values and a
+ * fraction is a normal, real concept (a 2.5-second pause), so those are left
+ * as whatever plain decimal the customer wrote.
+ */
+function roundToInteger(verb: string, twilioAttr: string, value: string, findings: Finding[]): string {
+  const n = Number(value);
+  const rounded = Math.round(n);
+  if (rounded !== n) warn(verb, `${twilioAttr}="${value}" isn't a whole number; using ${rounded} instead.`, findings);
+  return String(rounded);
+}
+
+/**
+ * Keeps an already-numeric value (see resolveNumeric) within the range
+ * Bandwidth documents for the BXML attribute it maps to, warning when it had
+ * to change. Warnings name the Twilio attribute the customer actually wrote
+ * (not Bandwidth's name for it) while still saying which BXML attribute is
+ * affected, so the warning can be found by searching the customer's own
+ * TwiML and still makes sense next to the generated BXML.
+ */
+function clampToRange(
   verb: string,
   twilioAttr: string,
   bxmlAttr: string,
   value: string,
   min: number,
   max: number,
-  fallback: string,
   findings: Finding[],
 ): string {
   const n = Number(value);
-  if (!Number.isFinite(n)) {
-    warn(verb, `${twilioAttr}="${value}" isn't a plain number Bandwidth can use for ${bxmlAttr}; using ${fallback} instead.`, findings);
-    return fallback;
-  }
   if (n < min) {
     warn(verb, `${twilioAttr}="${value}" is below Bandwidth's minimum for ${bxmlAttr} (${min}); using ${min} instead.`, findings);
     return String(min);
@@ -367,7 +404,7 @@ function clampAttr(
     warn(verb, `${twilioAttr}="${value}" is above Bandwidth's maximum for ${bxmlAttr} (${max}); using ${max} instead.`, findings);
     return String(max);
   }
-  return String(n);
+  return value;
 }
 
 /**
@@ -541,14 +578,24 @@ function translateGather(
   // only reach firstDigitTimeout, leaving interDigitTimeout at Bandwidth's
   // default regardless of what the customer set. A blank timeout (empty or
   // all whitespace) is treated the same as omitted: Twilio doesn't accept a
-  // blank duration either.
-  const timeout = orDefault(node.attrs.timeout, "5");
+  // blank duration either. Validated as a number once, not once per BXML
+  // attribute it maps to, so a non-numeric value doesn't produce two
+  // near-identical warnings.
+  const timeout = resolveNumeric("Gather", "timeout", orDefault(node.attrs.timeout, "5"), "5", findings);
   const attrs: Record<string, string | undefined> = {
     maxDigits: isBlank(node.attrs.numDigits)
       ? undefined
-      : clampAttr("Gather", "numDigits", "maxDigits", node.attrs.numDigits as string, 1, 50, "50", findings),
-    firstDigitTimeout: clampAttr("Gather", "timeout", "firstDigitTimeout", timeout, 0, 60, "5", findings),
-    interDigitTimeout: clampAttr("Gather", "timeout", "interDigitTimeout", timeout, 1, 60, "5", findings),
+      : clampToRange(
+          "Gather",
+          "numDigits",
+          "maxDigits",
+          roundToInteger("Gather", "numDigits", resolveNumeric("Gather", "numDigits", node.attrs.numDigits as string, "50", findings), findings),
+          1,
+          50,
+          findings,
+        ),
+    firstDigitTimeout: clampToRange("Gather", "timeout", "firstDigitTimeout", timeout, 0, 60, findings),
+    interDigitTimeout: clampToRange("Gather", "timeout", "interDigitTimeout", timeout, 1, 60, findings),
     terminatingDigits: gatherTerminatingDigits(node.attrs.finishOnKey, findings),
   };
   // Twilio input: "dtmf" | "speech" | "dtmf speech". BW: dtmf | speech | dtmf_speech.
@@ -589,11 +636,30 @@ let dialSeq = 0;
 let currentTransferLegUrl: ((dialIndex: number) => string) | undefined;
 // The absolute URL of the document being translated, if the caller knows it
 // (the server does; standalone BXML generation does not). See documentUrl.
+//
+// This makes six pieces of module state reset per translateTwiml call and
+// subject to the same reentrancy caveat as bxmlByteBudget above. Multiple
+// reviews have suggested threading one mutable context object through every
+// verb-translating function instead, which would remove the caveat entirely.
+// That's a real improvement, deliberately deferred rather than done inline
+// here: it touches the signature of every translateX function and its
+// recursive call sites, which is a larger, separate refactor than this fix
+// warrants risking right before merge. Worth doing as its own follow-up.
 let currentDocumentUrl: string | undefined;
 
 // The only characters Bandwidth recognizes as a key in either verb's
 // terminatingDigits: Gather's set, or the one character Record takes.
 const VALID_TERMINATING_KEYS = new Set([..."0123456789*#"]);
+
+/** True for a non-empty string that holds only whitespace — almost certainly
+ *  a template artifact, not a deliberate value. Used to treat a
+ *  whitespace-only finishOnKey the same as omitted (Twilio's own default),
+ *  not as the deliberate "turn the stop-key feature off" value that an exact
+ *  empty string is, the same way a blank numeric attribute falls back to its
+ *  default rather than being read as a real zero (see isBlank). */
+function isWhitespaceOnly(value: string): boolean {
+  return value !== "" && value.trim() === "";
+}
 
 /**
  * Keeps only the characters Bandwidth recognizes as keys in a Gather's
@@ -603,12 +669,12 @@ const VALID_TERMINATING_KEYS = new Set([..."0123456789*#"]);
  * each invalid character is dropped — with a warning — rather than passed
  * through for Bandwidth to silently ignore. Twilio's default ("#") is exactly
  * matched by Bandwidth's explicit "#" (unlike Record's default, which only
- * partially matches — see recordTerminatingDigits), so the omitted case
+ * partially matches — see recordTerminatingDigits), so the not-set case
  * doesn't need a warning.
  */
 function gatherTerminatingDigits(finishOnKey: string | undefined, findings: Finding[]): string {
-  if (finishOnKey === undefined) return "#";
   if (finishOnKey === "") return ""; // both systems treat this as "disabled"
+  if (finishOnKey === undefined || isWhitespaceOnly(finishOnKey)) return "#";
   const valid = [...finishOnKey].filter((c) => VALID_TERMINATING_KEYS.has(c)).join("");
   if (valid !== finishOnKey)
     warn(
@@ -624,18 +690,21 @@ function gatherTerminatingDigits(finishOnKey: string | undefined, findings: Find
  * `VALID_TERMINATING_KEYS`, unlike Gather's set of acceptable characters and
  * Twilio's own default of "any key" (1234567890*#). Twilio's default and
  * Bandwidth's own default ("#") happen to agree on "#" stopping the
- * recording, so the omitted case is a partial match: only "#" stops it here,
+ * recording, so the not-set case is a partial match: only "#" stops it here,
  * not the other nine keys. An explicit multi-character finishOnKey is
  * narrowed the same way, preferring "#" then "*" then the first valid
- * character present, since Bandwidth cannot represent a set. A value with no
- * valid character at all (e.g. "a") can't be narrowed to anything; on Twilio
- * that value would never match a real key either, so nothing should stop the
- * recording early — emitting Bandwidth's own default ("#") instead would
- * introduce a stop key the customer never asked for, so this disables the
- * feature ("") rather than falling back to it.
+ * character present, since Bandwidth cannot represent a set — but a value
+ * made up of nothing but repeats of one single valid character (e.g. "##")
+ * isn't actually narrowed to anything different, so that doesn't warn either.
+ * A value with no valid character at all (e.g. "a") can't be narrowed to
+ * anything; on Twilio that value would never match a real key either, so
+ * nothing should stop the recording early — emitting Bandwidth's own default
+ * ("#") instead would introduce a stop key the customer never asked for, so
+ * this disables the feature ("") rather than falling back to it.
  */
 function recordTerminatingDigits(finishOnKey: string | undefined, findings: Finding[]): string {
-  if (finishOnKey === undefined) {
+  if (finishOnKey === "") return ""; // both systems treat this as "disabled"
+  if (finishOnKey === undefined || isWhitespaceOnly(finishOnKey)) {
     warn(
       "Record",
       `finishOnKey defaults to "1234567890*#" (any key stops the recording) on Twilio; Bandwidth's Record only supports one terminating digit, so only "#" will stop it here.`,
@@ -643,7 +712,6 @@ function recordTerminatingDigits(finishOnKey: string | undefined, findings: Find
     );
     return "#";
   }
-  if (finishOnKey === "") return ""; // both systems treat this as "disabled"
   const valid = [...finishOnKey].filter((c) => VALID_TERMINATING_KEYS.has(c));
   if (valid.length === 0) {
     warn(
@@ -653,7 +721,10 @@ function recordTerminatingDigits(finishOnKey: string | undefined, findings: Find
     );
     return "";
   }
-  if (finishOnKey.length === 1) return finishOnKey; // the one character is already valid: exact match
+  // A value made entirely of repeats of the one valid character (e.g. "##")
+  // narrows to exactly that character with nothing lost, so it's an exact
+  // match in every way that matters, not something worth warning about.
+  if (new Set(valid).size === 1 && valid.length === finishOnKey.length) return valid[0]!;
   const chosen = valid.includes("#") ? "#" : valid.includes("*") ? "*" : valid[0]!;
   warn(
     "Record",
@@ -676,9 +747,11 @@ function translateRecord(
   // agree, so no special-casing is needed for that value. A blank value
   // (empty or all whitespace) is treated the same as omitted: Twilio doesn't
   // accept a blank duration either.
+  const maxLength = resolveNumeric("Record", "maxLength", orDefault(node.attrs.maxLength, "3600"), "3600", findings);
+  const timeout = resolveNumeric("Record", "timeout", orDefault(node.attrs.timeout, "5"), "5", findings);
   const attrs: Record<string, string | undefined> = {
-    maxDuration: clampAttr("Record", "maxLength", "maxDuration", orDefault(node.attrs.maxLength, "3600"), 1, 10800, "3600", findings),
-    silenceTimeout: clampAttr("Record", "timeout", "silenceTimeout", orDefault(node.attrs.timeout, "5"), 0, 10800, "5", findings),
+    maxDuration: clampToRange("Record", "maxLength", "maxDuration", maxLength, 1, 10800, findings),
+    silenceTimeout: clampToRange("Record", "timeout", "silenceTimeout", timeout, 0, 10800, findings),
     terminatingDigits: recordTerminatingDigits(node.attrs.finishOnKey, findings),
     recordCompleteUrl: resolveActionUrl("Record", node.attrs.action, "record", rewrite, findings),
   };

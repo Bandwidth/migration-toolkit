@@ -82,6 +82,14 @@ describe("Gather", () => {
       expect(r.bxml).toContain(`terminatingDigits="1#"`);
     });
 
+    it("treats a whitespace-only finishOnKey the same as omitted, not as an invalid value to filter", () => {
+      const r = translateTwiml(`<Response><Gather action="/menu" finishOnKey="   "/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`terminatingDigits="#"`);
+      expect(r.findings).toEqual([]);
+    });
+
     it("emits timeout's Twilio default (5) as both firstDigitTimeout and interDigitTimeout when omitted", () => {
       const r = translateTwiml(`<Response><Gather action="/menu"/></Response>`, { rewriteUrl: rw });
       expect(r.bxml).toContain(`firstDigitTimeout="5"`);
@@ -202,6 +210,34 @@ describe("Gather", () => {
         r.findings.some((f) => f.severity === "warning" && /numDigits="abc"/.test(f.message)),
       ).toBe(true);
     });
+
+    it("never emits scientific notation, even for a very small value", () => {
+      // String(0.0000001) is "1e-7" in JavaScript; Bandwidth's BXML parser
+      // almost certainly expects a plain decimal number.
+      const r = translateTwiml(`<Response><Gather action="/menu" timeout="0.0000001"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).not.toContain("e-7");
+      expect(r.bxml).not.toMatch(/[0-9]e[-+]?[0-9]/i);
+    });
+
+    it("rounds numDigits to a whole number and warns, since there's no such thing as collecting half a digit", () => {
+      const r = translateTwiml(`<Response><Gather action="/menu" numDigits="2.5"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`maxDigits="3"`);
+      expect(
+        r.findings.some((f) => f.severity === "warning" && /numDigits="2.5" isn't a whole number/.test(f.message)),
+      ).toBe(true);
+    });
+
+    it("warns only once for a non-numeric timeout, not once per BXML attribute it maps to", () => {
+      const r = translateTwiml(`<Response><Gather action="/menu" timeout="abc"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      const warnings = r.findings.filter((f) => /timeout="abc"/.test(f.message));
+      expect(warnings).toHaveLength(1);
+    });
   });
 
   describe("no action, re-requesting the current document (VAPI-4042)", () => {
@@ -277,6 +313,14 @@ describe("Record", () => {
         rewriteUrl: rw,
       });
       expect(r.bxml).toContain(`silenceTimeout="10800"`);
+    });
+
+    it("keeps a fractional maxLength as-is, unlike numDigits: a 90.5-second recording limit is a real concept", () => {
+      const r = translateTwiml(`<Response><Record action="/done" maxLength="90.5"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`maxDuration="90.5"`);
+      expect(r.findings.some((f) => /maxLength="90.5"/.test(f.message))).toBe(false);
     });
 
     it("treats maxLength=\"\" the same as omitted, not as 0", () => {
@@ -363,6 +407,26 @@ describe("Record", () => {
       expect(r.bxml).toContain(`terminatingDigits=""`);
       expect(
         r.findings.some((f) => f.severity === "warning" && /finishOnKey="a"/.test(f.message)),
+      ).toBe(true);
+    });
+
+    it("does not warn when a repeated single valid character narrows to nothing different", () => {
+      // "##" narrows to "#", exactly what a bare "#" would already produce --
+      // there's no real narrowing or information loss to warn about.
+      const r = translateTwiml(`<Response><Record action="/done" finishOnKey="##"/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`terminatingDigits="#"`);
+      expect(r.findings.some((f) => /finishOnKey/.test(f.message))).toBe(false);
+    });
+
+    it("treats a whitespace-only finishOnKey the same as omitted, not as an invalid value to disable", () => {
+      const r = translateTwiml(`<Response><Record action="/done" finishOnKey="   "/></Response>`, {
+        rewriteUrl: rw,
+      });
+      expect(r.bxml).toContain(`terminatingDigits="#"`);
+      expect(
+        r.findings.some((f) => f.severity === "warning" && /finishOnKey defaults to/.test(f.message)),
       ).toBe(true);
     });
   });

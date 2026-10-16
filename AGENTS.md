@@ -123,8 +123,17 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     TwiML document and re-translates the verbs after that Gather. Set
     `actionOnEmptyResult="true"` to request the action with `Digits=""` instead.
     On a translator instance that has not seen the document (restart, second
-    replica) the action is requested as a fallback. A Gather with no `action`
-    attribute re-requests the current document, as on Twilio. `finishOnKey`'s
+    replica) a Gather **with** an `action` falls back to requesting it anyway.
+    A Gather with **no** `action` attribute re-requests the current document,
+    as on Twilio — but the same no-document fallback can't do that for a
+    document it never cached, so it ends the call instead, rather than
+    re-fetching and replaying that same document forever. **In a multi-replica
+    deployment with no session affinity routing a call's `/bw/continue`
+    requests back to the replica that served its last document, this means a
+    silent caller on a bare Gather can have their call ended instead of
+    continuing to the next verb — a real behavior difference from Twilio,
+    worth fixing with a shared (not per-process) document cache if it matters
+    for your deployment.** `finishOnKey`'s
     Twilio default (`"#"`) is emitted explicitly, since Bandwidth's own default
     for this attribute is `""` (disabled) — a real difference. `timeout`
     (default 5) sets both `firstDigitTimeout` and `interDigitTimeout`; the
@@ -133,9 +142,15 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     `firstDigitTimeout`, silently leaving `interDigitTimeout` at Bandwidth's
     default regardless of what was set. `numDigits`, `timeout`, and `maxLength`
     (on `Record`, below) are kept within the ranges Bandwidth documents, with a
-    warning naming the original value if it had to change; a value that isn't a
-    plain number at all falls back to Twilio's own default instead of being
-    passed through for Bandwidth to reject.
+    warning naming the original value if it had to change (checked, and
+    warned about, once per Twilio attribute even where it maps to more than
+    one BXML attribute); a value that isn't a plain number at all falls back
+    to Twilio's own default instead of being passed through for Bandwidth to
+    reject, and is never emitted in scientific notation. `numDigits`
+    specifically is also rounded to a whole number, since there's no such
+    thing as collecting half a digit — `timeout`/`maxLength` keep a
+    fractional value as written, since a fractional duration is a real,
+    normal concept Bandwidth's own docs allow.
   - `Record` — the `action` receives `RecordingUrl`, `RecordingSid`, and
     `RecordingDuration` from Bandwidth's `recordComplete`; Bandwidth's event has
     no equivalent of Twilio's `Digits` (the key that stopped the recording). A
@@ -147,11 +162,15 @@ Translation is a fixed rulebook (`src/matrix/twilio-voice.json`), not a guess.
     Bandwidth's documented ranges like Gather's `numDigits`/`timeout` above.
     `finishOnKey` is narrowed to Bandwidth's single terminating digit
     (preferring `#`, then `*`, then the first valid character present), since
-    Bandwidth cannot represent Twilio's default set of any key; a value with no
-    digit, `*`, or `#` at all is dropped rather than passed through, letting
-    Bandwidth's own default (`"#"`) apply. `playBeep` and `trim` warn unless
-    set to the one value (`"false"` / `"do-not-trim"`) where Bandwidth's fixed
-    behavior (no beep, never trims) happens to match Twilio's.
+    Bandwidth cannot represent Twilio's default set of any key — a value made
+    of nothing but one valid character repeated (e.g. `"##"`) isn't actually
+    narrowed to anything different, so that doesn't warn. A value with no
+    digit, `*`, or `#` at all turns the stop key off (`terminatingDigits=""`)
+    rather than falling back to Bandwidth's own default (`"#"`), since that
+    would give the customer a stop key they never wrote into their TwiML.
+    `playBeep` and `trim` warn unless set to the one value (`"false"` /
+    `"do-not-trim"`) where Bandwidth's fixed behavior (no beep, never trims)
+    happens to match Twilio's.
   - `Start` — the `Transcription` noun maps to `StartTranscription`; the
     `Siprec` and `VirtualAgent` nouns are unsupported.
   - `Refer` — Bandwidth only honors `Refer` on inbound SIP URI calls, so a PSTN
