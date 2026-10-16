@@ -22,6 +22,15 @@ export interface RewriteContext {
   dialIndex?: number;
   /** How many targets (Number/Sip) this <Dial> rings, i.e. how many legs to expect. */
   dialTargets?: number;
+  /** This URL was generated because the verb had no action attribute and the
+   *  server fell back to the document's own URL (see TranslateOptions.documentUrl),
+   *  not because the customer wrote this URL themselves. Lets the server tell
+   *  "re-request the customer's real action" apart from "re-request myself",
+   *  which matters when there is no cached document to resume after a Gather
+   *  with no input: re-requesting a real action is a reasonable fallback, but
+   *  re-requesting the document that produced this same Gather would just
+   *  replay the same prompt forever. */
+  selfReference?: boolean;
 }
 
 export type RewriteUrl = (url: string, kind: UrlKind, ctx?: RewriteContext) => string;
@@ -42,6 +51,13 @@ export interface TranslateOptions {
    *  to resume a document when a Gather ends with no input: Twilio continues
    *  with the following verbs, Bandwidth expects fresh BXML from the gatherUrl. */
   resumeAfterGather?: number;
+  /** Absolute URL of the TwiML document being translated. A <Gather>/<Record>
+   *  with no action re-requests this same URL on Twilio; the translator
+   *  replicates that by rewriting it as the action, which only the server can
+   *  usefully resolve (it knows the URL it just fetched and can fetch it
+   *  again). Standalone BXML generation leaves this unset, so a missing
+   *  action keeps producing a warning instead of a URL nothing will serve. */
+  documentUrl?: string;
 }
 
 export interface TranslateResult {
@@ -237,6 +253,7 @@ export function translateTwiml(twiml: string, opts: TranslateOptions = {}): Tran
   gatherSeq = 0;
   dialSeq = 0;
   currentTransferLegUrl = opts.transferLegUrl;
+  currentDocumentUrl = opts.documentUrl;
   const root = parseTwiml(twiml);
   const findings: Finding[] = [];
   const rewrite: RewriteUrl = opts.rewriteUrl ?? ((u: string) => u);
@@ -256,9 +273,31 @@ export function translateTwiml(twiml: string, opts: TranslateOptions = {}): Tran
   if (opts.callbackAuth) stampCallbackAuth(els, opts.callbackAuth);
   return {
     bxml: bxmlDocument(els),
-    findings,
+    findings: dedupeFindings(findings),
     hasErrors: findings.some((f) => f.severity === "error"),
   };
+}
+
+/**
+ * Collapses findings that repeat the exact same severity+verb+message to a
+ * single occurrence. A generic finding (e.g. "Record's playBeep defaults to
+ * true...") says nothing new the second time it's reported for the same
+ * verb, and a document with many instances of one verb (e.g. 50 bare
+ * <Record>s) would otherwise bury any findings that differ — like the
+ * out-of-range warnings, which embed the offending value and so remain
+ * distinct per occurrence. Order is preserved; only later duplicates drop.
+ * Exported so compatibility-check's analyzeSource can apply the same rule
+ * across the several <Response> blocks one file may contain, instead of
+ * keeping its own separate dedup logic that could drift from this one.
+ */
+export function dedupeFindings(findings: Finding[]): Finding[] {
+  const seen = new Set<string>();
+  return findings.filter((f) => {
+    const key = `${f.severity}\u0000${f.verb}\u0000${f.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function unsupported(node: TwimlNode, findings: Finding[], detail?: string): null {
@@ -274,6 +313,125 @@ function unsupported(node: TwimlNode, findings: Finding[], detail?: string): nul
 
 function warn(verb: string, message: string, findings: Finding[]): void {
   findings.push({ severity: "warning", verb, message, docsUrl: matrix.verbs[verb]?.docsUrl });
+}
+
+/** True for an attribute that's absent or holds only whitespace — e.g. a
+ *  template variable that rendered empty. Treated the same as "not set" for
+ *  numeric attributes: JavaScript's Number() reads whitespace-only text as 0
+ *  (Number(" ") === 0), which would otherwise look like a real, in-range zero
+ *  rather than a value nobody actually set. */
+function isBlank(value: string | undefined): boolean {
+  return value === undefined || value.trim() === "";
+}
+
+/** `value`, or `fallback` when `value` is blank (see isBlank). */
+function orDefault(value: string | undefined, fallback: string): string {
+  return isBlank(value) ? fallback : (value as string);
+}
+
+/**
+ * Formats a finite number as plain decimal text. `String(n)` switches to
+ * scientific notation for very small magnitudes (`String(0.0000001)` is
+ * `"1e-7"`), which Bandwidth's BXML parser almost certainly doesn't expect
+ * for a duration or count; this always returns a plain decimal string.
+ */
+function toPlainDecimal(n: number): string {
+  const s = String(n);
+  if (!/e/i.test(s)) return s;
+  return n.toFixed(20).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/**
+ * Resolves a TwiML attribute to a plain, finite decimal number, warning once
+ * and falling back to `fallback` when it isn't a usable number at all (empty,
+ * "abc", "Infinity") rather than being passed through — Bandwidth's BXML
+ * parser expects a plain decimal number here, and silently forwarding "abc"
+ * would just move today's rejected-call problem from "out of range" to "not
+ * a number in the first place". A value that IS a number (including forms
+ * Bandwidth almost certainly doesn't accept, like "0x3C" or "1e1") is
+ * normalized to its plain decimal form. Blank input (see isBlank) should be
+ * resolved to a default by the caller before this runs, so this only ever
+ * warns about a value that's actually present but unusable.
+ */
+function resolveNumeric(verb: string, twilioAttr: string, value: string, fallback: string, findings: Finding[]): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    warn(verb, `${twilioAttr}="${value}" isn't a plain number Bandwidth can use; using ${fallback} instead.`, findings);
+    return fallback;
+  }
+  return toPlainDecimal(n);
+}
+
+/**
+ * Rounds an already-numeric value (see resolveNumeric) to the nearest whole
+ * number, warning if it wasn't one. For a *count* — Gather's numDigits is the
+ * only one of these attributes — a fraction has no real meaning (there's no
+ * such thing as collecting 2.5 digits), unlike the duration attributes
+ * (timeout, maxLength), where Bandwidth's own docs allow decimal values and a
+ * fraction is a normal, real concept (a 2.5-second pause), so those are left
+ * as whatever plain decimal the customer wrote.
+ */
+function roundToInteger(verb: string, twilioAttr: string, value: string, findings: Finding[]): string {
+  const n = Number(value);
+  const rounded = Math.round(n);
+  if (rounded !== n) warn(verb, `${twilioAttr}="${value}" isn't a whole number; using ${rounded} instead.`, findings);
+  return String(rounded);
+}
+
+/**
+ * Keeps an already-numeric value (see resolveNumeric) within the range
+ * Bandwidth documents for the BXML attribute it maps to, warning when it had
+ * to change. Warnings name the Twilio attribute the customer actually wrote
+ * (not Bandwidth's name for it) while still saying which BXML attribute is
+ * affected, so the warning can be found by searching the customer's own
+ * TwiML and still makes sense next to the generated BXML.
+ */
+function clampToRange(
+  verb: string,
+  twilioAttr: string,
+  bxmlAttr: string,
+  value: string,
+  min: number,
+  max: number,
+  findings: Finding[],
+): string {
+  const n = Number(value);
+  if (n < min) {
+    warn(verb, `${twilioAttr}="${value}" is below Bandwidth's minimum for ${bxmlAttr} (${min}); using ${min} instead.`, findings);
+    return String(min);
+  }
+  if (n > max) {
+    warn(verb, `${twilioAttr}="${value}" is above Bandwidth's maximum for ${bxmlAttr} (${max}); using ${max} instead.`, findings);
+    return String(max);
+  }
+  return value;
+}
+
+/**
+ * Resolves a Gather/Record's `action` to the URL it should actually request:
+ * the explicit `action` if given, or — when the server knows the URL of the
+ * document being translated — that same URL, matching Twilio's "no action
+ * re-requests the current document" behavior. Returns undefined, and warns,
+ * when there is neither (standalone BXML generation has no server to send a
+ * request back to). Shared by translateGather and translateRecord, which
+ * otherwise had identical branching here.
+ */
+function resolveActionUrl(
+  verb: string,
+  action: string | undefined,
+  kind: UrlKind,
+  rewrite: RewriteUrl,
+  findings: Finding[],
+  ctx?: RewriteContext,
+): string | undefined {
+  if (action) return rewrite(action, kind, ctx);
+  if (currentDocumentUrl !== undefined) return rewrite(currentDocumentUrl, kind, { ...ctx, selfReference: true });
+  warn(
+    verb,
+    `${verb} without an action attribute re-requests the current document URL on Twilio; set an explicit action for identical behavior through the translator.`,
+    findings,
+  );
+  return undefined;
 }
 
 // Twilio's documented ceiling for Say/Play loop counts; also our hard bound on
@@ -413,10 +571,32 @@ function translateGather(
   findings: Finding[],
   rewrite: RewriteUrl,
 ): XmlEl[] | null {
+  // Twilio's timeout (default 5) governs both the pause before the first digit
+  // and the gap between digits; Bandwidth splits these into two attributes.
+  // Bandwidth happens to default both to 5s on its own, so an omitted timeout
+  // is a no-op either way — the real fix is that an EXPLICIT timeout used to
+  // only reach firstDigitTimeout, leaving interDigitTimeout at Bandwidth's
+  // default regardless of what the customer set. A blank timeout (empty or
+  // all whitespace) is treated the same as omitted: Twilio doesn't accept a
+  // blank duration either. Validated as a number once, not once per BXML
+  // attribute it maps to, so a non-numeric value doesn't produce two
+  // near-identical warnings.
+  const timeout = resolveNumeric("Gather", "timeout", orDefault(node.attrs.timeout, "5"), "5", findings);
   const attrs: Record<string, string | undefined> = {
-    maxDigits: node.attrs.numDigits,
-    firstDigitTimeout: node.attrs.timeout,
-    terminatingDigits: node.attrs.finishOnKey,
+    maxDigits: isBlank(node.attrs.numDigits)
+      ? undefined
+      : clampToRange(
+          "Gather",
+          "numDigits",
+          "maxDigits",
+          roundToInteger("Gather", "numDigits", resolveNumeric("Gather", "numDigits", node.attrs.numDigits as string, "50", findings), findings),
+          1,
+          50,
+          findings,
+        ),
+    firstDigitTimeout: clampToRange("Gather", "timeout", "firstDigitTimeout", timeout, 0, 60, findings),
+    interDigitTimeout: clampToRange("Gather", "timeout", "interDigitTimeout", timeout, 1, 60, findings),
+    terminatingDigits: gatherTerminatingDigits(node.attrs.finishOnKey, findings),
   };
   // Twilio input: "dtmf" | "speech" | "dtmf speech". BW: dtmf | speech | dtmf_speech.
   if (node.attrs.input) {
@@ -437,17 +617,8 @@ function translateGather(
   // server can resume after this Gather when Bandwidth reports no input
   // (Twilio continues with the next verb unless actionOnEmptyResult="true").
   const gatherIndex = ++gatherSeq;
-  if (node.attrs.action)
-    attrs.gatherUrl = rewrite(node.attrs.action, "action", {
-      gatherIndex,
-      actionOnEmptyResult: node.attrs.actionOnEmptyResult === "true",
-    });
-  else
-    warn(
-      "Gather",
-      "Gather without an action attribute re-requests the current document URL on Twilio; set an explicit action for identical behavior through the translator.",
-      findings,
-    );
+  const gatherCtx = { gatherIndex, actionOnEmptyResult: node.attrs.actionOnEmptyResult === "true" };
+  attrs.gatherUrl = resolveActionUrl("Gather", node.attrs.action, "action", rewrite, findings, gatherCtx);
   const children: XmlEl[] = [];
   for (const child of node.children) {
     const el = translateVerb(child, findings, rewrite);
@@ -463,17 +634,127 @@ let gatherSeq = 0;
 let dialSeq = 0;
 // The server's transferDisconnect endpoint for the current translation, if any.
 let currentTransferLegUrl: ((dialIndex: number) => string) | undefined;
+// The absolute URL of the document being translated, if the caller knows it
+// (the server does; standalone BXML generation does not). See documentUrl.
+//
+// This makes six pieces of module state reset per translateTwiml call and
+// subject to the same reentrancy caveat as bxmlByteBudget above. Multiple
+// reviews have suggested threading one mutable context object through every
+// verb-translating function instead, which would remove the caveat entirely.
+// That's a real improvement, deliberately deferred rather than done inline
+// here: it touches the signature of every translateX function and its
+// recursive call sites, which is a larger, separate refactor than this fix
+// warrants risking right before merge. Worth doing as its own follow-up.
+let currentDocumentUrl: string | undefined;
+
+// The only characters Bandwidth recognizes as a key in either verb's
+// terminatingDigits: Gather's set, or the one character Record takes.
+const VALID_TERMINATING_KEYS = new Set([..."0123456789*#"]);
+
+/** True for a non-empty string that holds only whitespace — almost certainly
+ *  a template artifact, not a deliberate value. Used to treat a
+ *  whitespace-only finishOnKey the same as omitted (Twilio's own default),
+ *  not as the deliberate "turn the stop-key feature off" value that an exact
+ *  empty string is, the same way a blank numeric attribute falls back to its
+ *  default rather than being read as a real zero (see isBlank). */
+function isWhitespaceOnly(value: string): boolean {
+  return value !== "" && value.trim() === "";
+}
+
+/**
+ * Keeps only the characters Bandwidth recognizes as keys in a Gather's
+ * finishOnKey — a set, like Twilio's: any of these ends the Gather. A
+ * character outside 0-9/*\/# would never match a real key press, silently
+ * disabling the feature the same way an entirely invalid value would, so
+ * each invalid character is dropped — with a warning — rather than passed
+ * through for Bandwidth to silently ignore. Twilio's default ("#") is exactly
+ * matched by Bandwidth's explicit "#" (unlike Record's default, which only
+ * partially matches — see recordTerminatingDigits), so the not-set case
+ * doesn't need a warning.
+ */
+function gatherTerminatingDigits(finishOnKey: string | undefined, findings: Finding[]): string {
+  if (finishOnKey === "") return ""; // both systems treat this as "disabled"
+  if (finishOnKey === undefined || isWhitespaceOnly(finishOnKey)) return "#";
+  const valid = [...finishOnKey].filter((c) => VALID_TERMINATING_KEYS.has(c)).join("");
+  if (valid !== finishOnKey)
+    warn(
+      "Gather",
+      `finishOnKey="${finishOnKey}" has a character Bandwidth doesn't recognize as a key (only 0-9, "*", and "#" work); using "${valid}" instead.`,
+      findings,
+    );
+  return valid;
+}
+
+/**
+ * Bandwidth's Record terminatingDigits takes a single character from
+ * `VALID_TERMINATING_KEYS`, unlike Gather's set of acceptable characters and
+ * Twilio's own default of "any key" (1234567890*#). Twilio's default and
+ * Bandwidth's own default ("#") happen to agree on "#" stopping the
+ * recording, so the not-set case is a partial match: only "#" stops it here,
+ * not the other nine keys. An explicit multi-character finishOnKey is
+ * narrowed the same way, preferring "#" then "*" then the first valid
+ * character present, since Bandwidth cannot represent a set — but a value
+ * made up of nothing but repeats of one single valid character (e.g. "##")
+ * isn't actually narrowed to anything different, so that doesn't warn either.
+ * A value with no valid character at all (e.g. "a") can't be narrowed to
+ * anything; on Twilio that value would never match a real key either, so
+ * nothing should stop the recording early — emitting Bandwidth's own default
+ * ("#") instead would introduce a stop key the customer never asked for, so
+ * this disables the feature ("") rather than falling back to it.
+ */
+function recordTerminatingDigits(finishOnKey: string | undefined, findings: Finding[]): string {
+  if (finishOnKey === "") return ""; // both systems treat this as "disabled"
+  if (finishOnKey === undefined || isWhitespaceOnly(finishOnKey)) {
+    warn(
+      "Record",
+      `finishOnKey defaults to "1234567890*#" (any key stops the recording) on Twilio; Bandwidth's Record only supports one terminating digit, so only "#" will stop it here.`,
+      findings,
+    );
+    return "#";
+  }
+  const valid = [...finishOnKey].filter((c) => VALID_TERMINATING_KEYS.has(c));
+  if (valid.length === 0) {
+    warn(
+      "Record",
+      `finishOnKey="${finishOnKey}" has no digit, "*", or "#" for Bandwidth's Record to use as a terminating key; no key will stop the recording early (the way none of "${finishOnKey}" would stop it on Twilio either).`,
+      findings,
+    );
+    return "";
+  }
+  // A value made entirely of repeats of the one valid character (e.g. "##")
+  // narrows to exactly that character with nothing lost, so it's an exact
+  // match in every way that matters, not something worth warning about.
+  if (new Set(valid).size === 1 && valid.length === finishOnKey.length) return valid[0]!;
+  const chosen = valid.includes("#") ? "#" : valid.includes("*") ? "*" : valid[0]!;
+  warn(
+    "Record",
+    `finishOnKey="${finishOnKey}" has more than one character; Bandwidth's Record only supports one terminating digit, so only "${chosen}" will stop it here.`,
+    findings,
+  );
+  return chosen;
+}
 
 function translateRecord(
   node: TwimlNode,
   findings: Finding[],
   rewrite: RewriteUrl,
 ): XmlEl[] | null {
+  // Twilio's maxLength defaults to 3600s; Bandwidth's own maxDuration default
+  // is 60s, so the omitted case must be explicit to avoid recordings cut
+  // short at a minute. Twilio's timeout (silence ends the recording) has no
+  // BXML attribute at all today; silenceTimeout fills that gap. Twilio's
+  // timeout="0" (disable) and Bandwidth's silenceTimeout="0" (no timeout)
+  // agree, so no special-casing is needed for that value. A blank value
+  // (empty or all whitespace) is treated the same as omitted: Twilio doesn't
+  // accept a blank duration either.
+  const maxLength = resolveNumeric("Record", "maxLength", orDefault(node.attrs.maxLength, "3600"), "3600", findings);
+  const timeout = resolveNumeric("Record", "timeout", orDefault(node.attrs.timeout, "5"), "5", findings);
   const attrs: Record<string, string | undefined> = {
-    maxDuration: node.attrs.maxLength,
-    terminatingDigits: node.attrs.finishOnKey,
+    maxDuration: clampToRange("Record", "maxLength", "maxDuration", maxLength, 1, 10800, findings),
+    silenceTimeout: clampToRange("Record", "timeout", "silenceTimeout", timeout, 0, 10800, findings),
+    terminatingDigits: recordTerminatingDigits(node.attrs.finishOnKey, findings),
+    recordCompleteUrl: resolveActionUrl("Record", node.attrs.action, "record", rewrite, findings),
   };
-  if (node.attrs.action) attrs.recordCompleteUrl = rewrite(node.attrs.action, "record");
   // Twilio's async "recording is ready" webhook (recordingStatusCallback) maps to
   // Bandwidth's recordingAvailableUrl. The translator receives the BW event, reshapes
   // it into Twilio recording-callback params, and forwards it to the customer.
@@ -494,8 +775,22 @@ function translateRecord(
       "Transcription engines and callback payloads differ between Twilio and Bandwidth.",
       findings,
     );
-  if (node.attrs.playBeep && node.attrs.playBeep !== "false")
-    warn("Record", "playBeep has no BXML equivalent; no beep will play before recording.", findings);
+  // Twilio's playBeep defaults to true; warn unless it's explicitly disabled,
+  // since that's the only value where Bandwidth's "never beeps" matches.
+  if (node.attrs.playBeep !== "false")
+    warn(
+      "Record",
+      "playBeep defaults to true (plays a beep) on Twilio; Bandwidth has no equivalent, so no beep will play before recording.",
+      findings,
+    );
+  // Twilio's trim defaults to "trim-silence"; warn unless it's explicitly
+  // "do-not-trim", the only value where Bandwidth's "never trims" matches.
+  if (node.attrs.trim !== "do-not-trim")
+    warn(
+      "Record",
+      "Twilio trims leading/trailing silence by default (trim-silence); Bandwidth never trims recordings, so no equivalent exists.",
+      findings,
+    );
   return [{ name: "Record", attrs }];
 }
 

@@ -186,7 +186,13 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
     // plus the flag that says the customer wants the action even then.
     if (kind === "action" && ctx?.gatherIndex !== undefined) {
       const onEmpty = ctx.actionOnEmptyResult ? "&onEmpty=1" : "";
-      return `${config.publicBaseUrl}/bw/continue?next=${encodeURIComponent(absolute)}&gather=${ctx.gatherIndex}${onEmpty}`;
+      // Marks a Gather with no action (this URL points back at the document
+      // that served it, not a real customer action) so /bw/continue can tell
+      // the two apart if it ever needs to resume this document and can't:
+      // falling back to "request the action anyway" is reasonable for a real
+      // action, but would just replay this same prompt forever for a self-reference.
+      const self = ctx.selfReference ? "&self=1" : "";
+      return `${config.publicBaseUrl}/bw/continue?next=${encodeURIComponent(absolute)}&gather=${ctx.gatherIndex}${onEmpty}${self}`;
     }
     // A Dial's action names the Dial (matching its legs' transferDisconnectUrl)
     // and how many legs it rings, so /bw/continue joins only that Dial's legs.
@@ -331,6 +337,7 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
       rewriteUrl: rewriter(documentUrl, doc),
       callbackAuth: { username: config.webhookUser, password: config.webhookPassword },
       transferLegUrl: (dialIndex) => `${config.publicBaseUrl}/bw/transfer-leg?dial=${doc}.${dialIndex}`,
+      documentUrl,
       ...extra,
     });
     if (result.hasErrors) {
@@ -451,7 +458,14 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
   app.post("/bw/continue", async (req, reply) => {
     const event = req.body as BwEvent;
     if (!event || !isSafeBwId(event.callId)) return reply.code(400).send(serverErrors.invalidParam("callId"));
-    const query = req.query as { next?: string; gather?: string; onEmpty?: string; dial?: string; legs?: string };
+    const query = req.query as {
+      next?: string;
+      gather?: string;
+      onEmpty?: string;
+      dial?: string;
+      legs?: string;
+      self?: string;
+    };
     if (!query.next) return reply.code(400).send(serverErrors.missingParam("next"));
     const record =
       store.get(event.callId) ??
@@ -477,8 +491,21 @@ export function buildApp(config: ServerConfig, deps: ServerDeps): FastifyInstanc
               resumeAfterGather: gatherIndex,
             });
           }
-          // No document to resume (fresh instance, or an old-style URL): the only
-          // way to keep the call alive is to ask the action anyway.
+          // No document to resume (fresh instance, second replica, or an
+          // old-style URL). For a real customer action, asking it anyway is a
+          // reasonable fallback. For a Gather with no action -- this URL
+          // points back at the document that served it, not a real action --
+          // asking "the action" would re-fetch and replay that exact same
+          // document, and since nothing about the situation changes, it would
+          // keep replaying forever. End the call instead, the way Twilio ends
+          // a call that runs out of TwiML to execute.
+          if (query.self === "1") {
+            app.log.warn(
+              { callId: event.callId },
+              "empty gather on a Gather with no action, with no document to resume; ending the call rather than replaying it",
+            );
+            return reply.type("application/xml").send(bxmlDocument([]));
+          }
           app.log.warn({ callId: event.callId }, "empty gather with no document to resume; requesting action");
         }
         params = gatherParams(record, config.accountSid, {
